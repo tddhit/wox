@@ -174,13 +174,23 @@ func (m *master) waitWorker(pid int) {
 	p, _ := os.FindProcess(pid)
 	state, _ := p.Wait()
 	status := state.Sys().(syscall.WaitStatus)
-	if status.Signaled() {
+	if status.ExitStatus() != 0 {
 		m.children.Store(pid, workerCrash)
 		log.Errorf("WorkerCrash\tPid=%d\n", pid)
 	} else {
 		m.children.Store(pid, workerQuit)
 		log.Infof("WorkerQuit\tPid=%d\n", pid)
 	}
+	/*
+		log.Error(status.Exited())
+		log.Error(status.ExitStatus())
+		log.Error(status.Signaled())
+		log.Error(status.Signal())
+		log.Error(status.CoreDump())
+		log.Error(status.Stopped())
+		log.Error(status.Continued())
+		log.Error(status.StopSignal())
+	*/
 }
 
 func (m *master) readMsg(pid int, uc *net.UnixConn) {

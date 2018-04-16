@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -162,7 +164,11 @@ func (h *HTTPServer) listenAddr() string {
 }
 
 func (h *HTTPServer) statusAddr() string {
-	return h.opt.StatusAddr
+	s := strings.Split(h.opt.Addr, ":")
+	port, _ := strconv.Atoi(s[len(s)-1])
+	s[len(s)-1] = strconv.Itoa(port + 1)
+	addr := strings.Join(s, ":")
+	return addr
 }
 
 func (h *HTTPServer) close(quitCh chan struct{}) {
