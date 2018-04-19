@@ -47,7 +47,7 @@ func (r *Registry) Register() {
 		done <- struct{}{}
 	}()
 	select {
-	case <-time.After(r.Timeout * time.Millisecond):
+	case <-time.After(r.Timeout):
 		log.Fatalf("registry %s/%s timeout.\n", r.Target, addr)
 	case <-done:
 		log.Infof("registry success:%s/%s\n", r.Target, addr)

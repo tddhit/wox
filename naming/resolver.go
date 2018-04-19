@@ -24,6 +24,5 @@ func (r *Resolver) Resolve(target string) (addrs []string) {
 			addrs = append(addrs, string(kv.Value))
 		}
 	}
-	log.Infof("resolver target:%s\taddrs:%v\n", target, addrs)
 	return
 }

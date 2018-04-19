@@ -67,7 +67,7 @@ func (w *worker) run() {
 func (w *worker) register() {
 	r := &naming.Registry{
 		Client:     w.c,
-		Timeout:    2000,
+		Timeout:    2000 * time.Millisecond,
 		TTL:        1,
 		Target:     w.registry,
 		ListenAddr: w.server.listenAddr(),

@@ -18,7 +18,7 @@ type Resolver struct {
 }
 
 func (r *Resolver) Save(target, path string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), r.Timeout*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), r.Timeout)
 	defer cancel()
 	if rsp, err := r.Client.Get(ctx, target); err != nil {
 		log.Error(err)
@@ -43,7 +43,7 @@ func (r *Resolver) Save(target, path string) error {
 		file.Sync()
 		file.Close()
 		time.Sleep(10 * time.Millisecond)
-		log.Infof("resolver target:%s\nconfig:%v\n", target, string(rsp.Kvs[0].Value))
+		log.Infof("resolver target:%s\n", target)
 	}
 	return nil
 }
