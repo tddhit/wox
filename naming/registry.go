@@ -60,6 +60,7 @@ func (r *Registry) Close() {
 }
 
 func GetLocalAddr(listenAddr string) string {
+	var host string
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		log.Fatal(err)
@@ -69,11 +70,20 @@ func GetLocalAddr(listenAddr string) string {
 			if isExternalIP(ipnet.IP) {
 				continue
 			} else {
-				return ipnet.IP.String()
+				host = ipnet.IP.String()
+				break
 			}
 		}
 	}
-	return ""
+	if host == "" {
+		log.Fatal("no suitable LocalAddr")
+	}
+	s := strings.Split(listenAddr, ":")
+	if len(s) < 2 {
+		log.Fatalf("invalid listenAddr:%s\n", listenAddr)
+	}
+	port := s[len(s)-1]
+	return host + ":" + port
 }
 
 func isExternalIP(IP net.IP) bool {
