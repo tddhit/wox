@@ -66,7 +66,9 @@ func GetLocalAddr(listenAddr string) string {
 		log.Fatal(err)
 	}
 	for _, a := range addrs {
-		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+		if ipnet, ok := a.(*net.IPNet); ok &&
+			ipnet.IP.To4() != nil &&
+			!ipnet.IP.IsLoopback() {
 			if isExternalIP(ipnet.IP) {
 				continue
 			} else {
