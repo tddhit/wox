@@ -26,7 +26,7 @@ func (a *echoAPI) do(req, rsp interface{}) (err error) {
 }
 
 func main() {
-	httpServer := wox.NewHTTPServer(option.Server{Addr: ":18860"})
+	httpServer := wox.NewHTTPServer(option.Server{Addr: ":18860", StatusAddr: ":8018"})
 	s := &wox.WoxServer{
 		Server: httpServer,
 	}

@@ -164,11 +164,13 @@ func (h *HTTPServer) listenAddr() string {
 }
 
 func (h *HTTPServer) statusAddr() string {
-	s := strings.Split(h.opt.Addr, ":")
-	port, _ := strconv.Atoi(s[len(s)-1])
-	s[len(s)-1] = strconv.Itoa(port + 1)
-	addr := strings.Join(s, ":")
-	return addr
+	if h.opt.StatusAddr == "" {
+		s := strings.Split(h.opt.Addr, ":")
+		port, _ := strconv.Atoi(s[len(s)-1])
+		s[len(s)-1] = strconv.Itoa(port + 1)
+		return strings.Join(s, ":")
+	}
+	return h.opt.StatusAddr
 }
 
 func (h *HTTPServer) close(quitCh chan struct{}) {
