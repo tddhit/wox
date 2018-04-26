@@ -34,6 +34,8 @@ type HTTPServer struct {
 	statsCh  chan []byte
 	quitCh   chan struct{}
 	requests *requests
+
+	closeHandler sync.Once
 }
 
 func NewHTTPServer(opt option.Server) *HTTPServer {
@@ -174,16 +176,18 @@ func (h *HTTPServer) statusAddr() string {
 }
 
 func (h *HTTPServer) close(quitCh chan struct{}) {
-	if h.h2Server == nil {
-		ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-		h.h1Server.Shutdown(ctx)
-	} else {
-		h.listener.Close()
-	}
-	go func() {
-		select {
-		case <-h.quitCh:
-			close(quitCh)
+	h.closeHandler.Do(func() {
+		if h.h2Server == nil {
+			ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+			h.h1Server.Shutdown(ctx)
+		} else {
+			h.listener.Close()
 		}
-	}()
+		go func() {
+			select {
+			case <-h.quitCh:
+				close(quitCh)
+			}
+		}()
+	})
 }

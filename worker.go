@@ -60,7 +60,7 @@ func (w *worker) run() {
 			log.Infof("WriteMsg\tPid=%d\tMsg=%d\n", w.pid, msgWorkerTakeover)
 		}
 	}
-	log.Infof("StartWorker\tPid=%d\n", w.pid)
+	log.Infof("StartWorker\tPid=%d\tReason=%s\n", w.pid, reason)
 	select {}
 }
 

@@ -52,6 +52,8 @@ func withJsonParse(s *HTTPServer, pattern string, jsonReq, jsonRsp interface{}, 
 			rsp.Write([]byte(Err400Rsp.Error()))
 			return
 		}
+		input, _ := json.Marshal(newJsonReq)
+		log.Infof("type=http\treq=%s\n", input)
 		err = do(newJsonReq, newJsonRsp)
 		if err != nil {
 			output = []byte(err.Error())
@@ -63,7 +65,6 @@ func withJsonParse(s *HTTPServer, pattern string, jsonReq, jsonRsp interface{}, 
 		rsp.Write(output)
 		end := time.Now()
 		elapsed := end.Sub(start)
-		input, _ := json.Marshal(newJsonReq)
 		log.Infof("type=http\treq=%s\trsp=%s\telapsed=%d\n", input, output, elapsed/1000000)
 	}
 }
