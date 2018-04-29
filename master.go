@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -367,6 +368,15 @@ func (m *master) doStats(rsp http.ResponseWriter, req *http.Request) {
 }
 
 func (m *master) doStatsHTML(rsp http.ResponseWriter, req *http.Request) {
+	err := req.ParseForm()
+	if err != nil {
+		rsp.Write([]byte(err.Error()))
+	}
+	html := m.stats.html
+	addr := req.FormValue("addr")
+	if addr != "" {
+		html = strings.Replace(m.stats.html, m.listenAddr, addr, 1)
+	}
 	rsp.Header().Set("Content-Type", "text/html; charset=utf-8")
-	rsp.Write([]byte(m.stats.html))
+	rsp.Write([]byte(html))
 }
