@@ -32,25 +32,26 @@ const (
 )
 
 type master struct {
-	c          *etcd.Client
-	targets    []string
-	num        int
-	children   sync.Map // key: pid, value:state
-	uc         sync.Map // key: pid, value:UnixConn
-	stats      *stats
-	listenAddr string
-	pid        int
+	c           *etcd.Client
+	targets     []string
+	num         int
+	children    sync.Map // key: pid, value:state
+	uc          sync.Map // key: pid, value:UnixConn
+	stats       *stats
+	listenAddrs [2]string
+	pid         int
 }
 
-func newMaster(c *etcd.Client, targets []string, statusAddr string) *master {
+func newMaster(c *etcd.Client, targets []string, statusAddrs [2]string) *master {
 	m := &master{
 		c:       c,
 		targets: targets,
 		num:     2,
 		pid:     os.Getpid(),
 	}
-	m.listenAddr = naming.GetLocalAddr(statusAddr)
-	m.stats = newStats(m.listenAddr)
+	m.listenAddrs[0] = naming.GetLocalAddr(statusAddrs[0])
+	m.listenAddrs[1] = naming.GetLocalAddr(statusAddrs[1])
+	m.stats = newStats()
 	return m
 }
 
@@ -306,8 +307,13 @@ func (m *master) listenAndServe() {
 	http.HandleFunc("/stats", m.doStats)
 	http.HandleFunc("/status", m.doStatus)
 	http.HandleFunc("/stats.html", m.doStatsHTML)
-	if err := http.ListenAndServe(m.listenAddr, nil); err != nil {
-		log.Fatal(err)
+	if err := http.ListenAndServe(m.listenAddrs[0], nil); err != nil {
+		m.listenAddrs[0] = m.listenAddrs[1]
+		log.Error(err, "-> try listen:", m.listenAddrs[0])
+		if err := http.ListenAndServe(m.listenAddrs[0], nil); err != nil {
+			log.Error(err)
+			m.rough()
+		}
 	}
 }
 
@@ -375,7 +381,9 @@ func (m *master) doStatsHTML(rsp http.ResponseWriter, req *http.Request) {
 	html := m.stats.html
 	addr := req.FormValue("addr")
 	if addr != "" {
-		html = strings.Replace(m.stats.html, m.listenAddr, addr, 1)
+		html = strings.Replace(m.stats.html, "##ListenAddr##", addr, 1)
+	} else {
+		html = strings.Replace(m.stats.html, "##ListenAddr##", m.listenAddrs[0], 1)
 	}
 	rsp.Header().Set("Content-Type", "text/html; charset=utf-8")
 	rsp.Write([]byte(html))

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox"
 	"github.com/tddhit/wox/option"
 )
@@ -26,6 +27,7 @@ func (a *echoAPI) do(req, rsp interface{}) (err error) {
 }
 
 func main() {
+	log.Init("echo.log", log.INFO)
 	httpServer := wox.NewHTTPServer(option.Server{Addr: ":18860", StatusAddr: ":8018"})
 	s := &wox.WoxServer{
 		Server: httpServer,

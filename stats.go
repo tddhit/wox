@@ -2,7 +2,6 @@ package wox
 
 import (
 	"bytes"
-	"strings"
 	"sync"
 )
 
@@ -19,7 +18,7 @@ type processStats struct {
 	Method map[string]int `json:"method"`
 }
 
-func newStats(addr string) *stats {
+func newStats() *stats {
 	s := &stats{
 		Master: &processStats{
 			Method: make(map[string]int),
@@ -30,7 +29,7 @@ func newStats(addr string) *stats {
 	buf.WriteString(statsBeginHTML)
 	buf.WriteString(statsJS)
 	buf.WriteString(statsEndHTML)
-	s.html = strings.Replace(buf.String(), "##ListenAddr##", addr, 1)
+	s.html = buf.String()
 	return s
 }
 

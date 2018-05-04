@@ -41,7 +41,7 @@ func readMsg(conn *net.UnixConn, id string, pid int) (*message, error) {
 type Server interface {
 	serve() error
 	listenAddr() string
-	statusAddr() string
+	statusAddr() [2]string
 	close(chan struct{})
 	stats() <-chan []byte
 }
