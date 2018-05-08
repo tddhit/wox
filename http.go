@@ -95,6 +95,11 @@ func NewHTTPServer(opt option.Server) *HTTPServer {
 		log.Fatal(err)
 	}
 	s.listener = listener
+	s.mux.HandleFunc("/status", func(rsp http.ResponseWriter, req *http.Request) {
+		rsp.Write([]byte(`{"code":200}`))
+		return
+	})
+
 	go s.calcQPS()
 	return s
 }
