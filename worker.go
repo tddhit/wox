@@ -70,7 +70,7 @@ func (w *worker) register() {
 		Timeout:    2000 * time.Millisecond,
 		TTL:        1,
 		Target:     w.registry,
-		ListenAddr: w.server.listenAddr(),
+		ListenAddr: w.server.ListenAddr(),
 	}
 	r.Register()
 }

@@ -166,8 +166,8 @@ func (h *HTTPServer) serve() (err error) {
 	return
 }
 
-func (h *HTTPServer) listenAddr() string {
-	return h.opt.Addr
+func (h *HTTPServer) ListenAddr() string {
+	return naming.GetLocalAddr(h.opt.Addr)
 }
 
 func (h *HTTPServer) statusAddr() (addrs [2]string) {
