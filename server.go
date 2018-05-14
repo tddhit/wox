@@ -3,8 +3,10 @@ package wox
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"net"
 	"os"
+	"strings"
 
 	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/tddhit/tools/log"
@@ -47,10 +49,12 @@ type Server interface {
 }
 
 type WoxServer struct {
-	Client   *etcd.Client
-	Targets  []string
-	Registry string
-	Server   Server
+	Client    *etcd.Client
+	Targets   []string
+	Registry  string
+	Server    Server
+	PIDPath   string
+	WorkerNum int
 }
 
 func (s *WoxServer) AddWatchTarget(target string) {
@@ -58,9 +62,21 @@ func (s *WoxServer) AddWatchTarget(target string) {
 }
 
 func (s *WoxServer) Go() {
+	if s.PIDPath == "" {
+		name := strings.Split(os.Args[0], "/")
+		if len(name) == 0 {
+			log.Fatal("get pidPath fail:", os.Args[0])
+		}
+		s.PIDPath = fmt.Sprintf("/var/%s.pid", name[len(name)-1])
+	}
+	if s.WorkerNum == 0 {
+		s.WorkerNum = 2
+	}
+
 	if os.Getenv(FORK) == "1" {
-		newWorker(s.Client, s.Registry, s.Server).run()
+		newWorker(s.Client, s.Registry, s.Server, s.PIDPath).run()
 	} else {
-		newMaster(s.Client, s.Targets, s.Server.statusAddr()).run()
+		newMaster(s.Client, s.Targets, s.Server.statusAddr(),
+			s.PIDPath, s.WorkerNum).run()
 	}
 }

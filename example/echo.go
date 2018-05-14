@@ -30,7 +30,8 @@ func main() {
 	log.Init("echo.log", log.INFO)
 	httpServer := wox.NewHTTPServer(option.Server{Addr: ":18860", StatusAddr: ":8018"})
 	s := &wox.WoxServer{
-		Server: httpServer,
+		Server:    httpServer,
+		WorkerNum: 1,
 	}
 	handler := &echoAPI{}
 	httpServer.AddHandler("/echo", &handler.req, &handler.rsp, handler.do)

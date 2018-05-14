@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -40,14 +41,22 @@ type master struct {
 	stats       *stats
 	listenAddrs [2]string
 	pid         int
+	pidPath     string
 }
 
-func newMaster(c *etcd.Client, targets []string, statusAddrs [2]string) *master {
+func newMaster(
+	c *etcd.Client,
+	targets []string,
+	statusAddrs [2]string,
+	pidPath string,
+	workerNum int) *master {
+
 	m := &master{
 		c:       c,
 		targets: targets,
-		num:     2,
+		num:     workerNum,
 		pid:     os.Getpid(),
+		pidPath: pidPath,
 	}
 	m.listenAddrs[0] = naming.GetLocalAddr(statusAddrs[0])
 	m.listenAddrs[1] = naming.GetLocalAddr(statusAddrs[1])
@@ -56,6 +65,7 @@ func newMaster(c *etcd.Client, targets []string, statusAddrs [2]string) *master 
 }
 
 func (m *master) run() {
+	m.savePID()
 	if err := os.Setenv(FORK, "1"); err != nil {
 		log.Fatal(err)
 	}
@@ -70,6 +80,23 @@ func (m *master) run() {
 	go m.listenAndServe()
 	log.Infof("StartMaster\tPid=%d\n", m.pid)
 	select {}
+}
+
+func (m *master) savePID() {
+	f, err := os.OpenFile(m.pidPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+	f.WriteString(strconv.Itoa(m.pid) + "\n")
+	f.Sync()
+	f.Close()
+}
+
+func (m *master) removePID() {
+	err := os.Remove(m.pidPath)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func (m *master) watchTarget() {
@@ -283,6 +310,7 @@ func (m *master) graceful() {
 		if m.c != nil {
 			m.c.Close()
 		}
+		m.removePID()
 		os.Exit(0)
 	}
 }
@@ -300,6 +328,7 @@ func (m *master) rough() {
 		return true
 	}
 	m.children.Range(f)
+	m.removePID()
 	os.Exit(1)
 }
 

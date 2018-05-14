@@ -1,11 +1,13 @@
 package wox
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/gob"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
 	etcd "github.com/coreos/etcd/clientv3"
@@ -21,15 +23,22 @@ type worker struct {
 	quitCh   chan struct{}
 	uc       *net.UnixConn
 	pid      int
+	pidPath  string
 }
 
-func newWorker(c *etcd.Client, registry string, server Server) *worker {
+func newWorker(
+	c *etcd.Client,
+	registry string,
+	server Server,
+	pidPath string) *worker {
+
 	w := &worker{
 		c:        c,
 		registry: registry,
 		server:   server,
 		quitCh:   make(chan struct{}),
 		pid:      os.Getpid(),
+		pidPath:  pidPath,
 	}
 	file := os.NewFile(3, "")
 	if conn, err := net.FileConn(file); err != nil {
@@ -48,7 +57,7 @@ func (w *worker) run() {
 	if len(w.registry) > 0 {
 		w.register()
 	}
-	//go w.watchMaster()
+	go w.watchMaster()
 	go w.watchSignal()
 	go w.readMsg()
 	go w.listenServer()
@@ -76,9 +85,23 @@ func (w *worker) register() {
 }
 
 func (w *worker) watchMaster() {
+	f, err := os.Open(w.pidPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	r := bufio.NewReader(f)
+	s, err := r.ReadString('\n')
+	if err != nil {
+		log.Fatal(err)
+	}
+	s = s[:len(s)-1]
+	pid, err := strconv.Atoi(s)
+	if err != nil {
+		log.Fatal(err)
+	}
 	tick := time.Tick(1 * time.Second)
 	for range tick {
-		if os.Getppid() == 1 {
+		if os.Getppid() != pid {
 			os.Exit(1)
 		}
 	}
