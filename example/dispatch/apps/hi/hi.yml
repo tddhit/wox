@@ -1,0 +1,11 @@
+logpath:
+loglevel: 1
+etcd:
+    - 127.0.0.1:2379
+httpServer:
+  httpVersion: 1.1
+  registry: /service/hi
+  addr: :8888
+  readTimeout: 1000
+  writeTimeout: 20000
+  idleTimeout: 30000

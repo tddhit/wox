@@ -1,0 +1,46 @@
+logpath:
+loglevel: 1
+etcd:
+    - 127.0.0.1:2379
+httpServer:
+  httpVersion: 1.1
+  registry: /service/dispatch
+  addr: :6666
+  readTimeout: 1000
+  writeTimeout: 20000
+  idleTimeout: 30000
+upstream:
+  hello:
+    enable: true
+    registry: /service/hello
+    api:
+      sayHello:
+        path: /sayHello
+        method: POST
+        header:
+          Content-Type:
+          - application/json
+    client:
+      httpVersion: 1.1
+      connectTimeout: 10000
+      readTimeout: 20000
+      idleConnTimeout: 60000
+      keepAlive: 30000
+      maxIdleConns: 100
+  hi:
+    enable: true
+    registry: /service/hi
+    api:
+      sayHi:
+        path: /sayHi
+        method: POST
+        header:
+          Content-Type:
+          - application/json
+    client:
+      httpVersion: 1.1
+      connectTimeout: 1000
+      readTimeout: 1000
+      idleConnTimeout: 60000
+      keepAlive: 30000
+      maxIdleConns: 100

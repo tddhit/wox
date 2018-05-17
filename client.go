@@ -2,6 +2,7 @@ package wox
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 
 	"golang.org/x/net/http2"
 
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/tddhit/wox/option"
 )
 
@@ -53,7 +56,16 @@ func NewClient(opt option.Client, addr string) *client {
 	return c
 }
 
-func (c *client) Request(method, path string, header http.Header, body []byte) (rspBody []byte, err error) {
+func (c *client) Request(
+	ctx context.Context,
+	method string,
+	path string,
+	header http.Header,
+	body []byte) (rspBody []byte, err error) {
+
+	span, _ := opentracing.StartSpanFromContext(ctx, path)
+	defer span.Finish()
+
 	if method != "POST" {
 		err = errUnsupportedMethod
 		return
@@ -68,6 +80,15 @@ func (c *client) Request(method, path string, header http.Header, body []byte) (
 		return
 	}
 	req.Header = header
+
+	ext.SpanKindRPCClient.Set(span)
+	ext.HTTPMethod.Set(span, "POST")
+	span.Tracer().Inject(
+		span.Context(),
+		opentracing.HTTPHeaders,
+		opentracing.HTTPHeadersCarrier(req.Header),
+	)
+
 	if rsp, err = c.Do(req); err != nil {
 		return
 	}

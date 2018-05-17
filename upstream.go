@@ -1,6 +1,7 @@
 package wox
 
 import (
+	"context"
 	"encoding/json"
 	rhttp "net/http"
 	"sync/atomic"
@@ -30,7 +31,11 @@ type Upstream struct {
 	cb       *gobreaker.CircuitBreaker
 }
 
-func NewUpstream(etcdClient *etcd.Client, opt option.Upstream, policy uint8) (*Upstream, error) {
+func NewUpstream(
+	ec *etcd.Client,
+	opt option.Upstream,
+	policy uint8) (*Upstream, error) {
+
 	u := &Upstream{
 		Api:    make(map[string]*api),
 		c:      make(map[string]*client),
@@ -44,7 +49,7 @@ func NewUpstream(etcdClient *etcd.Client, opt option.Upstream, policy uint8) (*U
 		}
 	}
 	r := &naming.Resolver{
-		Client:  etcdClient,
+		Client:  ec,
 		Timeout: 2 * time.Second,
 	}
 	addrs := r.Resolve(opt.Registry)
@@ -89,7 +94,7 @@ func NewUpstream(etcdClient *etcd.Client, opt option.Upstream, policy uint8) (*U
 	return u, nil
 }
 
-func (u *Upstream) NewRequest(a *api, req, rsp interface{}, hashKey string) error {
+func (u *Upstream) NewRequest(ctx context.Context, a *api, req, rsp interface{}, hashKey string) error {
 	f := func() (interface{}, error) {
 		if u.policy == ConsistentHash && len(u.c) == 0 {
 			return nil, errUnavailableUpstream
@@ -108,7 +113,7 @@ func (u *Upstream) NewRequest(a *api, req, rsp interface{}, hashKey string) erro
 			index := counter % uint64(len(u.cs))
 			c = u.cs[index]
 		}
-		err := a.newRequest(c, req, rsp)
+		err := a.newRequest(ctx, c, req, rsp)
 		return rsp, err
 	}
 	_, err := u.cb.Execute(f)
@@ -121,16 +126,17 @@ type api struct {
 	header rhttp.Header
 }
 
-func (a *api) newRequest(c *client, req, rsp interface{}) (err error) {
+func (a *api) newRequest(ctx context.Context, c *client, req, rsp interface{}) (err error) {
 	body, err := a.buildBody(req)
 	if err != nil {
 		return
 	}
-	rspBody, err := a.send(c, body)
+	rspBody, err := a.send(ctx, c, body)
 	if err != nil {
 		return
 	}
 	err = a.parseResponse(rspBody, rsp)
+
 	return
 }
 
@@ -151,9 +157,9 @@ func (a *api) buildBody(req interface{}) (body []byte, err error) {
 	return
 }
 
-func (a *api) send(c *client, reqBody []byte) (rspBody []byte, err error) {
+func (a *api) send(ctx context.Context, c *client, reqBody []byte) (rspBody []byte, err error) {
 	start := time.Now()
-	rspBody, err = c.Request(a.method, a.path, a.header, reqBody)
+	rspBody, err = c.Request(ctx, a.method, a.path, a.header, reqBody)
 	end := time.Now()
 	elapsed := end.Sub(start)
 	log.Infof("type=upstream\taddr=%s\tpath=%s\treq=%s\trsp=%s\telapsed=%d\n",

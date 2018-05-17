@@ -28,7 +28,7 @@ func (a *echoAPI) do(req, rsp interface{}) (err error) {
 
 func main() {
 	log.Init("echo.log", log.INFO)
-	httpServer := wox.NewHTTPServer(option.Server{Addr: ":18860", StatusAddr: ":8018"})
+	httpServer := wox.NewHTTPServer(option.Server{Addr: ":18860", StatusAddr: ":8018", Registry: "/nlpservice/echo"})
 	s := &wox.WoxServer{
 		Server:    httpServer,
 		WorkerNum: 1,

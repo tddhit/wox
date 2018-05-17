@@ -3,6 +3,7 @@ package wox
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -15,9 +16,11 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/time/rate"
 
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox/naming"
 	"github.com/tddhit/wox/option"
+	"github.com/tddhit/wox/tracing"
 )
 
 type requests struct {
@@ -34,6 +37,9 @@ type HTTPServer struct {
 	statsCh  chan []byte
 	quitCh   chan struct{}
 	requests *requests
+
+	tracer        opentracing.Tracer
+	tracingCloser io.Closer
 
 	closeHandler sync.Once
 }
@@ -99,6 +105,14 @@ func NewHTTPServer(opt option.Server) *HTTPServer {
 		rsp.Write([]byte(`{"code":200}`))
 		return
 	})
+
+	tracer, closer, err := tracing.Init(opt.Registry)
+	if err != nil {
+		log.Fatal(err, opt.Registry)
+	}
+	opentracing.SetGlobalTracer(tracer)
+	s.tracer = tracer
+	s.tracingCloser = closer
 
 	go s.calcQPS()
 	return s
@@ -198,5 +212,6 @@ func (h *HTTPServer) close(quitCh chan struct{}) {
 				close(quitCh)
 			}
 		}()
+		h.tracingCloser.Close()
 	})
 }

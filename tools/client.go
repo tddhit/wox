@@ -5,11 +5,11 @@ import (
 
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox"
-	"github.com/tddhit/wox/conf"
+	"github.com/tddhit/wox/option"
 )
 
 func main() {
-	cfg := conf.Client{
+	cfg := option.Client{
 		HTTPVersion:     "2.0",
 		ConnectTimeout:  1000,
 		ReadTimeout:     1000,

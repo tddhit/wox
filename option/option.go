@@ -1,6 +1,6 @@
 package option
 
-type api struct {
+type Api struct {
 	Path   string              `yaml:"path"`
 	Method string              `yaml:"method"`
 	Header map[string][]string `yaml:"header"`
@@ -28,7 +28,7 @@ type CircuitBreaker struct {
 type Upstream struct {
 	Enable         bool           `yaml:"enable"`
 	Registry       string         `yaml:"registry"`
-	Api            map[string]api `yaml:"api"`
+	Api            map[string]Api `yaml:"api"`
 	Client         Client         `yaml:"client"`
 	CircuitBreaker CircuitBreaker `yaml:"circuitBreaker"`
 }
@@ -38,7 +38,7 @@ type Server struct {
 	Registry     string         `yaml:"registry"`
 	Addr         string         `yaml:"addr"`
 	StatusAddr   string         `yaml:"statusAddr"`
-	Api          map[string]api `yaml:"api"`
+	Api          map[string]Api `yaml:"api"`
 	ReadTimeout  int64          `yaml:"readTimeout"`
 	WriteTimeout int64          `yaml:"writeTimeout"`
 	IdleTimeout  int64          `yaml:"idleTimeout"`
