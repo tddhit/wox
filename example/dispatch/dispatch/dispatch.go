@@ -4,11 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
-	"strings"
 	"sync"
-	"time"
-
-	etcd "github.com/coreos/etcd/clientv3"
 
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox"
@@ -28,45 +24,28 @@ type Dispatch struct {
 }
 
 func New(etcdAddrs, confKey, confPath string) *Dispatch {
-	endpoints := strings.Split(etcdAddrs, ",")
-	cfg := etcd.Config{
-		Endpoints:   endpoints,
-		DialTimeout: 2 * time.Second,
-	}
-	etcdClient, err := etcd.New(cfg)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	conf, err := NewConf(confPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Init(conf.LogPath, conf.LogLevel)
 	n := &Dispatch{
-		upstream: make(map[string]*wox.Upstream),
+		upstream:  make(map[string]*wox.Upstream),
+		woxServer: wox.NewServer(conf.HTTPServer, etcdAddrs),
 	}
-	var targets []string
 	for _, up := range conf.Upstream {
 		if up.Enable {
-			targets = append(targets, up.Registry)
+			n.woxServer.AddWatchTarget(up.Registry)
 		}
 	}
-	httpServer := wox.NewHTTPServer(conf.HTTPServer)
-	n.woxServer = &wox.WoxServer{
-		Client:   etcdClient,
-		Targets:  targets,
-		Registry: conf.HTTPServer.Registry,
-		Server:   httpServer,
-	}
-	n.woxServer.AddWatchTarget(confKey)
 	ctx := &Context{n}
 	handler := &greetAPI{ctx: ctx}
-	httpServer.AddHandler("/greet", &handler.req, &handler.rsp, wox.Decorate(handler.do, checkParams))
+	n.woxServer.AddWatchTarget(confKey)
+	n.woxServer.AddHandler("/greet", &handler.req, &handler.rsp, wox.Decorate(handler.do, checkParams))
 	if os.Getenv(wox.FORK) == "1" {
 		for k, v := range conf.Upstream {
 			if v.Enable {
-				if upstream, err := wox.NewUpstream(etcdClient, v, wox.RoundRobin); err != nil {
+				if upstream, err := wox.NewUpstream(v, wox.RoundRobin); err != nil {
 					log.Fatal(err)
 				} else {
 					n.upstream[k] = upstream

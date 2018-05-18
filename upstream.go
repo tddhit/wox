@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/sony/gobreaker"
 
 	"github.com/tddhit/tools/consistent"
@@ -32,7 +31,6 @@ type Upstream struct {
 }
 
 func NewUpstream(
-	ec *etcd.Client,
 	opt option.Upstream,
 	policy uint8) (*Upstream, error) {
 
@@ -49,7 +47,7 @@ func NewUpstream(
 		}
 	}
 	r := &naming.Resolver{
-		Client:  ec,
+		Client:  GlobalEtcdClient(),
 		Timeout: 2 * time.Second,
 	}
 	addrs := r.Resolve(opt.Registry)

@@ -5,6 +5,7 @@ etcd:
 httpServer:
   httpVersion: 1.1
   registry: /service/dispatch
+  tracingAgentAddr: 127.0.0.1:6832
   addr: :6666
   readTimeout: 1000
   writeTimeout: 20000

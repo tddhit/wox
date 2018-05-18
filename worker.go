@@ -10,35 +10,30 @@ import (
 	"strconv"
 	"time"
 
-	etcd "github.com/coreos/etcd/clientv3"
-
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox/naming"
 )
 
 type worker struct {
-	c        *etcd.Client
-	registry string
-	server   Server
-	quitCh   chan struct{}
-	uc       *net.UnixConn
-	pid      int
-	pidPath  string
+	registry   string
+	listenAddr string
+	httpServer *HTTPServer
+	quitCh     chan struct{}
+	uc         *net.UnixConn
+	pid        int    // worker pid
+	pidPath    string // master pid path
 }
 
-func newWorker(
-	c *etcd.Client,
-	registry string,
-	server Server,
-	pidPath string) *worker {
+func newWorker(registry, listenAddr, pidPath string,
+	httpServer *HTTPServer) *worker {
 
 	w := &worker{
-		c:        c,
-		registry: registry,
-		server:   server,
-		quitCh:   make(chan struct{}),
-		pid:      os.Getpid(),
-		pidPath:  pidPath,
+		registry:   registry,
+		listenAddr: listenAddr,
+		httpServer: httpServer,
+		quitCh:     make(chan struct{}),
+		pid:        os.Getpid(),
+		pidPath:    pidPath,
 	}
 	file := os.NewFile(3, "")
 	if conn, err := net.FileConn(file); err != nil {
@@ -62,7 +57,7 @@ func (w *worker) run() {
 	go w.readMsg()
 	go w.listenServer()
 	go w.watchStats()
-	go w.server.serve()
+	go w.httpServer.Serve()
 	reason := os.Getenv("REASON")
 	if reason == reasonReload {
 		if err := w.notifyMaster(&message{Typ: msgWorkerTakeover}); err == nil {
@@ -75,11 +70,11 @@ func (w *worker) run() {
 
 func (w *worker) register() {
 	r := &naming.Registry{
-		Client:     w.c,
+		Client:     GlobalEtcdClient(),
 		Timeout:    2000 * time.Millisecond,
 		TTL:        1,
 		Target:     w.registry,
-		ListenAddr: w.server.ListenAddr(),
+		ListenAddr: w.listenAddr,
 	}
 	r.Register()
 }
@@ -129,7 +124,7 @@ func (w *worker) readMsg() {
 		switch msg.Typ {
 		case msgWorkerQuit:
 			log.Infof("ReadMsg\tPid=%d\tMsg=%d\n", w.pid, msg.Typ)
-			w.server.close(w.quitCh)
+			w.httpServer.Close(w.quitCh)
 		}
 	}
 }
@@ -137,9 +132,6 @@ func (w *worker) readMsg() {
 func (w *worker) listenServer() {
 	select {
 	case <-w.quitCh:
-		if w.c != nil {
-			w.c.Close()
-		}
 		w.uc.Close()
 		w.uc = nil
 		os.Exit(0)
@@ -147,7 +139,7 @@ func (w *worker) listenServer() {
 }
 
 func (w *worker) watchStats() {
-	for stats := range w.server.stats() {
+	for stats := range w.httpServer.Stats() {
 		w.notifyMaster(&message{Typ: msgWorkerStats, Value: stats})
 	}
 }

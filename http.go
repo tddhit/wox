@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -106,7 +104,7 @@ func NewHTTPServer(opt option.Server) *HTTPServer {
 		return
 	})
 
-	tracer, closer, err := tracing.Init(opt.Registry)
+	tracer, closer, err := tracing.Init(opt.Registry, opt.TracingAgentAddr)
 	if err != nil {
 		log.Fatal(err, opt.Registry)
 	}
@@ -118,7 +116,7 @@ func NewHTTPServer(opt option.Server) *HTTPServer {
 	return s
 }
 
-func (s *HTTPServer) stats() <-chan []byte {
+func (s *HTTPServer) Stats() <-chan []byte {
 	return s.statsCh
 }
 
@@ -138,7 +136,8 @@ func (s *HTTPServer) calcQPS() {
 }
 
 func (s *HTTPServer) AddHandler(pattern string, req, rsp interface{},
-	h HandlerFunc, chans ...chan *message) {
+	h HandlerFunc) {
+
 	if os.Getenv(FORK) != "1" {
 		return
 	}
@@ -151,7 +150,7 @@ func (s *HTTPServer) AddHandler(pattern string, req, rsp interface{},
 	s.mux.Handle(pattern, f)
 }
 
-func (h *HTTPServer) serve() (err error) {
+func (h *HTTPServer) Serve() (err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			if err == http.ErrServerClosed {
@@ -180,25 +179,7 @@ func (h *HTTPServer) serve() (err error) {
 	return
 }
 
-func (h *HTTPServer) ListenAddr() string {
-	return naming.GetLocalAddr(h.opt.Addr)
-}
-
-func (h *HTTPServer) statusAddr() (addrs [2]string) {
-	s := strings.Split(h.opt.Addr, ":")
-	port, _ := strconv.Atoi(s[len(s)-1])
-	s[len(s)-1] = strconv.Itoa(port + 1)
-	defaultAddr := strings.Join(s, ":")
-	if h.opt.StatusAddr != "" {
-		addrs[0] = h.opt.StatusAddr
-	} else {
-		addrs[0] = defaultAddr
-	}
-	addrs[1] = defaultAddr
-	return
-}
-
-func (h *HTTPServer) close(quitCh chan struct{}) {
+func (h *HTTPServer) Close(quitCh chan struct{}) {
 	h.closeHandler.Do(func() {
 		if h.h2Server == nil {
 			ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)

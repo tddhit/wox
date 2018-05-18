@@ -8,7 +8,7 @@ import (
 	config "github.com/uber/jaeger-client-go/config"
 )
 
-func Init(service string) (opentracing.Tracer, io.Closer, error) {
+func Init(service, agentAddr string) (opentracing.Tracer, io.Closer, error) {
 	cfg := &config.Configuration{
 		Sampler: &config.SamplerConfig{
 			Type:  "const",
@@ -16,7 +16,7 @@ func Init(service string) (opentracing.Tracer, io.Closer, error) {
 		},
 		Reporter: &config.ReporterConfig{
 			LogSpans:           true,
-			LocalAgentHostPort: "127.0.0.1:6831",
+			LocalAgentHostPort: agentAddr,
 		},
 	}
 	tracer, closer, err := cfg.New(service, config.Logger(jaeger.StdLogger))

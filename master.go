@@ -33,33 +33,24 @@ const (
 )
 
 type master struct {
-	c           *etcd.Client
-	targets     []string
-	num         int
-	children    sync.Map // key: pid, value:state
-	uc          sync.Map // key: pid, value:UnixConn
-	stats       *stats
-	listenAddrs [2]string
-	pid         int
-	pidPath     string
+	targets    []string
+	children   sync.Map // key: pid, value:state
+	uc         sync.Map // key: pid, value:UnixConn
+	stats      *stats
+	workerNum  int
+	pid        int
+	pidPath    string
+	listenAddr string
 }
 
-func newMaster(
-	c *etcd.Client,
-	targets []string,
-	statusAddrs [2]string,
-	pidPath string,
-	workerNum int) *master {
-
+func newMaster(targets []string, listenAddr, pidPath string, workerNum int) *master {
 	m := &master{
-		c:       c,
-		targets: targets,
-		num:     workerNum,
-		pid:     os.Getpid(),
-		pidPath: pidPath,
+		targets:    targets,
+		listenAddr: listenAddr,
+		workerNum:  workerNum,
+		pid:        os.Getpid(),
+		pidPath:    pidPath,
 	}
-	m.listenAddrs[0] = naming.GetLocalAddr(statusAddrs[0])
-	m.listenAddrs[1] = naming.GetLocalAddr(statusAddrs[1])
 	m.stats = newStats()
 	return m
 }
@@ -69,7 +60,7 @@ func (m *master) run() {
 	if err := os.Setenv(FORK, "1"); err != nil {
 		log.Fatal(err)
 	}
-	for i := 0; i < m.num; i++ {
+	for i := 0; i < m.workerNum; i++ {
 		if _, err := m.fork(reasonStart); err != nil {
 			log.Fatal(err)
 		}
@@ -103,7 +94,7 @@ func (m *master) watchTarget() {
 	for _, target := range m.targets {
 		log.Infof("WatchTarget\tTarget=%s\n", target)
 		w := &naming.Watcher{
-			Client:  m.c,
+			Client:  GlobalEtcdClient(),
 			Timeout: 2000,
 		}
 		if ch, err := w.Watch(target); err != nil {
@@ -241,7 +232,7 @@ func (m *master) readMsg(pid int, uc *net.UnixConn) {
 			}
 			m.stats.Unlock()
 		case msgWorkerTakeover:
-			if m.aliveWorkers() >= m.num {
+			if m.aliveWorkers() >= m.workerNum {
 				m.notifyWorker(&message{Typ: msgWorkerQuit}, workerReload)
 			}
 			log.Infof("ReadMsg\tPid=%d\tMsg=%d\n", pid, msg.Typ)
@@ -259,7 +250,7 @@ func (m *master) reload() {
 		return true
 	}
 	m.children.Range(f)
-	for i := 0; i < m.num; i++ {
+	for i := 0; i < m.workerNum; i++ {
 		if _, err := m.fork(reasonReload); err != nil {
 			log.Error(err)
 		}
@@ -307,9 +298,6 @@ func (m *master) graceful() {
 			return true
 		}
 		m.uc.Range(f)
-		if m.c != nil {
-			m.c.Close()
-		}
 		m.removePID()
 		os.Exit(0)
 	}
@@ -336,13 +324,8 @@ func (m *master) listenAndServe() {
 	http.HandleFunc("/stats", m.doStats)
 	http.HandleFunc("/status", m.doStatus)
 	http.HandleFunc("/stats.html", m.doStatsHTML)
-	if err := http.ListenAndServe(m.listenAddrs[0], nil); err != nil {
-		m.listenAddrs[0] = m.listenAddrs[1]
-		log.Error(err, "-> try listen:", m.listenAddrs[0])
-		if err := http.ListenAndServe(m.listenAddrs[0], nil); err != nil {
-			log.Error(err)
-			m.rough()
-		}
+	if err := http.ListenAndServe(m.listenAddr, nil); err != nil {
+		m.rough()
 	}
 }
 
@@ -374,9 +357,10 @@ func (m *master) doStatus(rsp http.ResponseWriter, req *http.Request) {
 		return true
 	}
 	m.children.Range(f)
-	if count != m.num {
+	if count != m.workerNum {
 		jsonRsp.Code = 207
-		jsonRsp.Error = fmt.Sprintf("WorkersNum is %d, not %d\n", count, m.num)
+		jsonRsp.Error = fmt.Sprintf("WorkersNum is %d, not %d\n",
+			count, m.workerNum)
 	} else {
 		jsonRsp.Code = 200
 	}
@@ -412,7 +396,8 @@ func (m *master) doStatsHTML(rsp http.ResponseWriter, req *http.Request) {
 	if addr != "" {
 		html = strings.Replace(m.stats.html, "##ListenAddr##", addr, 1)
 	} else {
-		html = strings.Replace(m.stats.html, "##ListenAddr##", m.listenAddrs[0], 1)
+		html = strings.Replace(m.stats.html, "##ListenAddr##",
+			m.listenAddr, 1)
 	}
 	rsp.Header().Set("Content-Type", "text/html; charset=utf-8")
 	rsp.Write([]byte(html))

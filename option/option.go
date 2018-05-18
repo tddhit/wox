@@ -34,12 +34,15 @@ type Upstream struct {
 }
 
 type Server struct {
-	HTTPVersion  string         `yaml:"httpVersion"`
-	Registry     string         `yaml:"registry"`
-	Addr         string         `yaml:"addr"`
-	StatusAddr   string         `yaml:"statusAddr"`
-	Api          map[string]Api `yaml:"api"`
-	ReadTimeout  int64          `yaml:"readTimeout"`
-	WriteTimeout int64          `yaml:"writeTimeout"`
-	IdleTimeout  int64          `yaml:"idleTimeout"`
+	HTTPVersion      string         `yaml:"httpVersion"`
+	Registry         string         `yaml:"registry"`
+	Addr             string         `yaml:"addr"`
+	StatusAddr       string         `yaml:"statusAddr"`
+	TracingAgentAddr string         `yaml:"tracingAgentAddr"`
+	PIDPath          string         `yaml:"pidPath"`
+	WorkerNum        int            `yaml:"workerNum"`
+	ReadTimeout      int64          `yaml:"readTimeout"`
+	WriteTimeout     int64          `yaml:"writeTimeout"`
+	IdleTimeout      int64          `yaml:"idleTimeout"`
+	Api              map[string]Api `yaml:"api"`
 }

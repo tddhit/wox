@@ -82,7 +82,7 @@ func GetLocalAddr(listenAddr string) string {
 	}
 	s := strings.Split(listenAddr, ":")
 	if len(s) < 2 {
-		log.Fatalf("invalid listenAddr:%s\n", listenAddr)
+		log.Panicf("invalid listenAddr:%s\n", listenAddr)
 	}
 	port := s[len(s)-1]
 	return host + ":" + port
