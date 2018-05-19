@@ -325,7 +325,7 @@ func (m *master) listenAndServe() {
 	http.HandleFunc("/status", m.doStatus)
 	http.HandleFunc("/stats.html", m.doStatsHTML)
 	if err := http.ListenAndServe(m.listenAddr, nil); err != nil {
-		m.rough()
+		log.Fatal(err)
 	}
 }
 

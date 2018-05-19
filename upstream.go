@@ -92,7 +92,9 @@ func NewUpstream(
 	return u, nil
 }
 
-func (u *Upstream) NewRequest(ctx context.Context, a *api, req, rsp interface{}, hashKey string) error {
+func (u *Upstream) NewRequest(ctx context.Context, a *api,
+	req, rsp interface{}, hashKey string) error {
+
 	f := func() (interface{}, error) {
 		if u.policy == ConsistentHash && len(u.c) == 0 {
 			return nil, errUnavailableUpstream

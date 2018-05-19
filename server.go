@@ -13,6 +13,7 @@ import (
 
 	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/tddhit/tools/log"
+	"github.com/tddhit/wox/confcenter"
 	"github.com/tddhit/wox/naming"
 	"github.com/tddhit/wox/option"
 )
@@ -53,7 +54,7 @@ func readMsg(conn *net.UnixConn, id string, pid int) (*message, error) {
 	return msg, nil
 }
 
-func SetGlobalEtcdClient(ec *etcd.Client) {
+func setGlobalEtcdClient(ec *etcd.Client) {
 	globalEtcdClient = ec
 }
 
@@ -71,14 +72,44 @@ type WoxServer struct {
 	httpServer *HTTPServer
 }
 
-func NewServer(opt option.Server, etcdAddrs string) *WoxServer {
-	httpServer := NewHTTPServer(opt)
+func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxServer {
+	// init etcd client
+	endpoints := strings.Split(etcdAddrs, ",")
+	cfg := etcd.Config{
+		Endpoints:   endpoints,
+		DialTimeout: 2000 * time.Millisecond,
+	}
+	ec, err := etcd.New(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	setGlobalEtcdClient(ec)
+
+	// get conf
+	if confKey != "" {
+		r := &confcenter.Resolver{
+			Client:  GlobalEtcdClient(),
+			Timeout: 2000 * time.Millisecond,
+		}
+		if err := r.Save(confKey, confPath); err != nil {
+			log.Fatal(err)
+		}
+	}
+	if err := confcenter.NewConf(confPath, conf); err != nil {
+		log.Fatal(err)
+	}
+
+	httpServer := NewHTTPServer(conf.Server())
 	s := &WoxServer{
-		pidPath:    opt.PIDPath,
-		registry:   opt.Registry,
-		workerNum:  opt.WorkerNum,
+		pidPath:    conf.Server().PIDPath,
+		registry:   conf.Server().Registry,
+		workerNum:  conf.Server().WorkerNum,
 		httpServer: httpServer,
 	}
+	if confKey != "" {
+		s.AddWatchTarget(confKey)
+	}
+
 	if s.pidPath == "" {
 		name := strings.Split(os.Args[0], "/")
 		if len(name) == 0 {
@@ -96,25 +127,11 @@ func NewServer(opt option.Server, etcdAddrs string) *WoxServer {
 		}
 	}
 
-	// init etcd client
-	if etcdAddrs != "" {
-		endpoints := strings.Split(etcdAddrs, ",")
-		cfg := etcd.Config{
-			Endpoints:   endpoints,
-			DialTimeout: 2000 * time.Millisecond,
-		}
-		ec, err := etcd.New(cfg)
-		if err != nil {
-			log.Fatal(err)
-		}
-		SetGlobalEtcdClient(ec)
-	}
-
-	s.workerAddr = naming.GetLocalAddr(opt.Addr)
-	if opt.StatusAddr != "" {
-		s.masterAddr = naming.GetLocalAddr(opt.StatusAddr)
+	s.workerAddr = naming.GetLocalAddr(conf.Server().Addr)
+	if conf.Server().StatusAddr != "" {
+		s.masterAddr = naming.GetLocalAddr(conf.Server().StatusAddr)
 	} else {
-		addr := strings.Split(opt.Addr, ":")
+		addr := strings.Split(conf.Server().Addr, ":")
 		port, _ := strconv.Atoi(addr[len(addr)-1])
 		addr[len(addr)-1] = strconv.Itoa(port + 1)
 		s.masterAddr = strings.Join(addr, ":")
@@ -138,6 +155,10 @@ func (s *WoxServer) statusAddr() string {
 func (s *WoxServer) AddHandler(pattern string, req, rsp interface{},
 	h HandlerFunc) {
 	s.httpServer.AddHandler(pattern, req, rsp, h)
+}
+
+func (s *WoxServer) AddProxyUpstream(opt *option.Upstream) error {
+	return s.httpServer.AddProxyUpstream(opt)
 }
 
 func (s *WoxServer) Go() {

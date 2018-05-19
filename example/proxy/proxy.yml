@@ -1,0 +1,20 @@
+logpath:
+loglevel: 1
+etcd:
+    - 127.0.0.1:2379
+httpServer:
+  httpVersion: 1.1
+  registry: /service/proxy
+  tracingAgentAddr: 127.0.0.1:6832
+  addr: :5555
+  readTimeout: 1000
+  writeTimeout: 20000
+  idleTimeout: 30000
+upstream:
+  enable: true
+  locations:
+    - method: POST
+      pattern: /echo
+    - method: POST
+      pattern: /echo/:method
+  registry: /service/echo

@@ -1,9 +1,10 @@
 package main
 
 import (
+	"context"
+
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox"
-	"github.com/tddhit/wox/option"
 )
 
 type echoAPI struct {
@@ -19,7 +20,7 @@ type echoRsp struct {
 	Str string `json:"str"`
 }
 
-func (a *echoAPI) do(req, rsp interface{}) (err error) {
+func (a *echoAPI) do(ctx context.Context, req, rsp interface{}) (err error) {
 	jsonReq := req.(*echoReq)
 	jsonRsp := rsp.(*echoRsp)
 	jsonRsp.Str = jsonReq.Str
@@ -27,14 +28,11 @@ func (a *echoAPI) do(req, rsp interface{}) (err error) {
 }
 
 func main() {
-	log.Init("echo.log", log.INFO)
-	httpServer := wox.NewHTTPServer(option.Server{Addr: ":18860", StatusAddr: ":8018", Registry: "/nlpservice/echo"})
-	s := &wox.WoxServer{
-		Server:    httpServer,
-		WorkerNum: 1,
-	}
+	conf := &Conf{}
+	s := wox.NewServer("127.0.0.1:2379", "", "echo.yml", conf)
+	log.Init(conf.LogPath, conf.LogLevel)
 	handler := &echoAPI{}
-	httpServer.AddHandler("/echo", &handler.req, &handler.rsp, handler.do)
-	httpServer.AddHandler("/echo2", &handler.req, &handler.rsp, handler.do)
+	s.AddHandler("/echo", &handler.req, &handler.rsp, handler.do)
+	s.AddHandler("/echo/ab", &handler.req, &handler.rsp, handler.do)
 	s.Go()
 }

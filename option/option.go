@@ -25,8 +25,15 @@ type CircuitBreaker struct {
 	FailureRatio  float64 `yaml:"failureRatio"`
 }
 
+type Location struct {
+	Method  string
+	Pattern string
+}
+
 type Upstream struct {
 	Enable         bool           `yaml:"enable"`
+	Locations      []Location     `yaml:"locations"`
+	Method         string         `yaml:"method"`
 	Registry       string         `yaml:"registry"`
 	Api            map[string]Api `yaml:"api"`
 	Client         Client         `yaml:"client"`

@@ -6,14 +6,18 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/http/pprof"
+	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2"
 	"golang.org/x/time/rate"
 
+	"github.com/julienschmidt/httprouter"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox/naming"
@@ -27,8 +31,8 @@ type requests struct {
 }
 
 type HTTPServer struct {
-	opt      option.Server
-	mux      *http.ServeMux
+	opt      *option.Server
+	mux      *httprouter.Router
 	h1Server *http.Server
 	h2Server *http2.Server
 	listener net.Listener
@@ -42,16 +46,16 @@ type HTTPServer struct {
 	closeHandler sync.Once
 }
 
-func NewHTTPServer(opt option.Server) *HTTPServer {
+func NewHTTPServer(opt *option.Server) *HTTPServer {
 	if os.Getenv(FORK) != "1" {
 		return &HTTPServer{opt: opt}
 	}
-	mux := http.NewServeMux()
-	mux.Handle("/debug/pprof/", http.HandlerFunc(pprof.Index))
-	mux.Handle("/debug/pprof/cmdline", http.HandlerFunc(pprof.Cmdline))
-	mux.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
-	mux.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
-	mux.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
+	mux := httprouter.New()
+	mux.HandlerFunc("GET", "/debug/pprof/", pprof.Index)
+	mux.HandlerFunc("GET", "/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandlerFunc("GET", "/debug/pprof/profile", pprof.Profile)
+	mux.HandlerFunc("GET", "/debug/pprof/symbol", pprof.Symbol)
+	mux.HandlerFunc("GET", "/debug/pprof/trace", pprof.Trace)
 	writeTimeout := 5 * time.Second
 	if opt.WriteTimeout > 0 {
 		writeTimeout = time.Duration(opt.WriteTimeout)
@@ -99,10 +103,11 @@ func NewHTTPServer(opt option.Server) *HTTPServer {
 		log.Fatal(err)
 	}
 	s.listener = listener
-	s.mux.HandleFunc("/status", func(rsp http.ResponseWriter, req *http.Request) {
-		rsp.Write([]byte(`{"code":200}`))
-		return
-	})
+	s.mux.HandlerFunc("GET", "/status",
+		func(rsp http.ResponseWriter, req *http.Request) {
+			rsp.Write([]byte(`{"code":200}`))
+			return
+		})
 
 	tracer, closer, err := tracing.Init(opt.Registry, opt.TracingAgentAddr)
 	if err != nil {
@@ -147,7 +152,44 @@ func (s *HTTPServer) AddHandler(pattern string, req, rsp interface{},
 		}
 	}
 	f := withJsonParse(s, pattern, req, rsp, h)
-	s.mux.Handle(pattern, f)
+	s.mux.Handler("POST", pattern, f)
+}
+
+func (s *HTTPServer) AddProxyUpstream(opt *option.Upstream) error {
+	if os.Getenv(FORK) != "1" {
+		return nil
+	}
+	r := &naming.Resolver{
+		Client:  GlobalEtcdClient(),
+		Timeout: 2 * time.Second,
+	}
+	addrs := r.Resolve(opt.Registry)
+	var urls []*url.URL
+	for _, addr := range addrs {
+		url := &url.URL{
+			Scheme: "http",
+			Host:   addr,
+		}
+		urls = append(urls, url)
+	}
+	if len(urls) == 0 {
+		return errUnavailableUpstream
+	}
+	var counter uint64
+	proxy := &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			counter := atomic.AddUint64(&counter, 1)
+			index := counter % uint64(len(urls))
+			remote := urls[index]
+			req.URL.Scheme = remote.Scheme
+			req.URL.Host = remote.Host
+		},
+	}
+	for _, location := range opt.Locations {
+		log.Debug(location)
+		s.mux.Handler(location.Method, location.Pattern, proxy)
+	}
+	return nil
 }
 
 func (h *HTTPServer) Serve() (err error) {
