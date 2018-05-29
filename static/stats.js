@@ -141,6 +141,9 @@ function GetStats() {
                 first = false;
                 options.splice(0, options.length);
                 for (var i in newData) {
+                    if (i > 3) {
+                        continue
+                    }
                     var option = new Option();
                     var process = newData[i];
                     if (i == 0) {
@@ -167,6 +170,9 @@ function GetStats() {
                 }
             } else {
                 for (var i in newData) {
+                    if (i > 3) {
+                        continue
+                    }
                     var option = options[i];
                     var process = newData[i];
                     for (var j in process.methods) {
