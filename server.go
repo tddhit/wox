@@ -134,7 +134,8 @@ func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxSe
 		addr := strings.Split(conf.Server().Addr, ":")
 		port, _ := strconv.Atoi(addr[len(addr)-1])
 		addr[len(addr)-1] = strconv.Itoa(port + 1)
-		s.masterAddr = strings.Join(addr, ":")
+		statusAddr := strings.Join(addr, ":")
+		s.masterAddr = naming.GetLocalAddr(statusAddr)
 	}
 
 	return s
