@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/url"
 
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox"
@@ -27,12 +28,33 @@ func (a *echoAPI) do(ctx context.Context, req, rsp interface{}) (err error) {
 	return
 }
 
+type echo2API struct {
+	req url.Values
+	rsp echo2Rsp
+}
+
+type echo2Rsp struct {
+	Str string `json:"str"`
+}
+
+func (a *echo2API) do(ctx context.Context, req, rsp interface{}) (err error) {
+	realReq := req.(url.Values)
+	realRsp := rsp.(*echo2Rsp)
+	if str, ok := realReq["Str"]; ok {
+		if len(str) > 0 {
+			realRsp.Str = str[0]
+		}
+	}
+	return
+}
+
 func main() {
 	conf := &Conf{}
 	s := wox.NewServer("127.0.0.1:2379", "", "echo.yml", conf)
 	log.Init(conf.LogPath, conf.LogLevel)
 	handler := &echoAPI{}
-	s.AddHandler("/echo", &handler.req, &handler.rsp, handler.do)
-	s.AddHandler("/echo/ab", &handler.req, &handler.rsp, handler.do)
+	s.AddHandler("/echo", &handler.req, &handler.rsp, handler.do, "application/json")
+	handler2 := &echo2API{}
+	s.AddHandler("/echo/ab", &handler2.req, &handler2.rsp, handler2.do, "application/x-www-form-urlencoded")
 	s.Go()
 }

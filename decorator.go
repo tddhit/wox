@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"reflect"
 	"time"
 
@@ -37,12 +38,13 @@ func withLimit(limit rate.Limit, burst int, do HandlerFunc) HandlerFunc {
 	}
 }
 
-func withJsonParse(
+func withParse(
 	s *HTTPServer,
 	pattern string,
-	jsonReq interface{},
-	jsonRsp interface{},
-	do HandlerFunc) http.HandlerFunc {
+	realReq interface{},
+	realRsp interface{},
+	do HandlerFunc,
+	contentType string) http.HandlerFunc {
 
 	return func(rsp http.ResponseWriter, req *http.Request) {
 		// stats
@@ -59,25 +61,30 @@ func withJsonParse(
 
 		var output []byte
 		start := time.Now()
-		reqType := reflect.TypeOf(jsonReq).Elem()
-		rspType := reflect.TypeOf(jsonRsp).Elem()
-		newJsonReq := reflect.New(reqType).Interface()
-		newJsonRsp := reflect.New(rspType).Interface()
+		reqType := reflect.TypeOf(realReq).Elem()
+		rspType := reflect.TypeOf(realRsp).Elem()
+		newRealReq := reflect.New(reqType).Interface()
+		newRealRsp := reflect.New(rspType).Interface()
 		body, _ := ioutil.ReadAll(req.Body)
-		err := json.Unmarshal(body, newJsonReq)
+		var err error
+		if contentType == "application/json" {
+			err = json.Unmarshal(body, newRealReq)
+		} else if contentType == "application/x-www-form-urlencoded" {
+			newRealReq, err = url.ParseQuery(string(body))
+		}
 		if err != nil {
 			log.Error(err)
 			rsp.Write([]byte(Err400Rsp.Error()))
 			return
 		}
-		input, _ := json.Marshal(newJsonReq)
+		input, _ := json.Marshal(newRealReq)
 		log.Infof("type=http\treq=%s\n", input)
 		ctx := opentracing.ContextWithSpan(context.Background(), span)
-		err = do(ctx, newJsonReq, newJsonRsp)
+		err = do(ctx, newRealReq, newRealRsp)
 		if err != nil {
 			output = []byte(err.Error())
 		} else {
-			output, _ = json.Marshal(newJsonRsp)
+			output, _ = json.Marshal(newRealRsp)
 		}
 		rsp.Header().Set("Content-Type", "application/json; charset=utf-8")
 		rsp.Header().Set("Access-Control-Allow-Origin", "*")

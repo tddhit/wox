@@ -140,8 +140,11 @@ func (s *HTTPServer) calcQPS() {
 	}
 }
 
-func (s *HTTPServer) AddHandler(pattern string, req, rsp interface{},
-	h HandlerFunc) {
+func (s *HTTPServer) AddHandler(
+	pattern string,
+	req, rsp interface{},
+	h HandlerFunc,
+	contentType string) {
 
 	if os.Getenv(FORK) != "1" {
 		return
@@ -151,7 +154,7 @@ func (s *HTTPServer) AddHandler(pattern string, req, rsp interface{},
 			h = withLimit(rate.Limit(api.Limit), api.Burst, h)
 		}
 	}
-	f := withJsonParse(s, pattern, req, rsp, h)
+	f := withParse(s, pattern, req, rsp, h, contentType)
 	s.mux.Handler("POST", pattern, f)
 }
 

@@ -153,8 +153,8 @@ func (s *WoxServer) statusAddr() string {
 }
 
 func (s *WoxServer) AddHandler(pattern string, req, rsp interface{},
-	h HandlerFunc) {
-	s.httpServer.AddHandler(pattern, req, rsp, h)
+	h HandlerFunc, contentType string) {
+	s.httpServer.AddHandler(pattern, req, rsp, h, contentType)
 }
 
 func (s *WoxServer) AddProxyUpstream(opt *option.Upstream) error {
