@@ -40,9 +40,8 @@ func (r *Registry) Register() {
 		}
 		go func() {
 			for range ch {
-				//log.Debug("KeepAlive")
 			}
-			log.Info("registry keepalive close.")
+			log.Warn("registry keepalive close.")
 		}()
 		done <- struct{}{}
 	}()

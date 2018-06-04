@@ -24,15 +24,12 @@ type Dispatch struct {
 }
 
 func New(etcdAddrs, confKey, confPath string) *Dispatch {
-	conf, err := NewConf(confPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Init(conf.LogPath, conf.LogLevel)
+	conf := &Conf{}
 	n := &Dispatch{
 		upstream:  make(map[string]*wox.Upstream),
-		woxServer: wox.NewServer(conf.HTTPServer, etcdAddrs),
+		woxServer: wox.NewServer(etcdAddrs, confKey, confPath, conf),
 	}
+	log.Init(conf.LogPath, conf.LogLevel)
 	for _, up := range conf.Upstream {
 		if up.Enable {
 			n.woxServer.AddWatchTarget(up.Registry)
@@ -41,7 +38,7 @@ func New(etcdAddrs, confKey, confPath string) *Dispatch {
 	ctx := &Context{n}
 	handler := &greetAPI{ctx: ctx}
 	n.woxServer.AddWatchTarget(confKey)
-	n.woxServer.AddHandler("/greet", &handler.req, &handler.rsp, wox.Decorate(handler.do, checkParams))
+	n.woxServer.AddHandler("/greet", &handler.req, &handler.rsp, wox.Decorate(handler.do, checkParams), "application/json")
 	if os.Getenv(wox.FORK) == "1" {
 		for k, v := range conf.Upstream {
 			if v.Enable {

@@ -62,11 +62,11 @@ func NewUpstream(
 	st := gobreaker.Settings{
 		Name:        opt.Registry,
 		MaxRequests: 10,
-		Interval:    60000 * time.Millisecond,
-		Timeout:     60000 * time.Millisecond,
+		Interval:    60 * time.Second,
+		Timeout:     10 * time.Second,
 	}
 	var (
-		requests uint32  = 100
+		requests uint32  = 60
 		ratio    float64 = 0.6
 	)
 	if opt.CircuitBreaker.MaxRequests > 0 {

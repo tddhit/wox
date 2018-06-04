@@ -10,17 +10,13 @@ type Hello struct {
 }
 
 func New(etcdAddrs, confKey, confPath string) *Hello {
-	conf, err := NewConf(confPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Init(conf.LogPath, conf.LogLevel)
 	n := &Hello{}
+	conf := &Conf{}
+	n.woxServer = wox.NewServer(etcdAddrs, confKey, confPath, conf)
+	log.Init(conf.LogPath, conf.LogLevel)
 	ctx := &Context{n}
 	handler := &printAPI{ctx: ctx}
-	n.woxServer = wox.NewServer(conf.HTTPServer, etcdAddrs)
-	n.woxServer.AddWatchTarget(confKey)
-	n.woxServer.AddHandler("/sayHello", &handler.req, &handler.rsp, handler.do)
+	n.woxServer.AddHandler("/sayHello", &handler.req, &handler.rsp, handler.do, "application/json")
 	return n
 }
 

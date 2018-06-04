@@ -106,9 +106,7 @@ func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxSe
 		workerNum:  conf.Server().WorkerNum,
 		httpServer: httpServer,
 	}
-	if confKey != "" {
-		s.AddWatchTarget(confKey)
-	}
+	s.AddWatchTarget(confKey)
 
 	if s.pidPath == "" {
 		name := strings.Split(os.Args[0], "/")
@@ -142,7 +140,9 @@ func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxSe
 }
 
 func (s *WoxServer) AddWatchTarget(target string) {
-	s.targets = append(s.targets, target)
+	if target != "" {
+		s.targets = append(s.targets, target)
+	}
 }
 
 func (s *WoxServer) ListenAddr() string {

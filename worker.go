@@ -72,7 +72,7 @@ func (w *worker) register() {
 	r := &naming.Registry{
 		Client:     GlobalEtcdClient(),
 		Timeout:    2000 * time.Millisecond,
-		TTL:        1,
+		TTL:        3,
 		Target:     w.registry,
 		ListenAddr: w.listenAddr,
 	}
