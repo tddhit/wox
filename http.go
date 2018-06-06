@@ -3,7 +3,6 @@ package wox
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -14,15 +13,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/julienschmidt/httprouter"
+	//opentracing "github.com/opentracing/opentracing-go"
 	"golang.org/x/net/http2"
 	"golang.org/x/time/rate"
 
-	"github.com/julienschmidt/httprouter"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox/naming"
 	"github.com/tddhit/wox/option"
-	"github.com/tddhit/wox/tracing"
+	//"github.com/tddhit/wox/tracing"
 )
 
 type requests struct {
@@ -40,8 +39,8 @@ type HTTPServer struct {
 	quitCh   chan struct{}
 	requests *requests
 
-	tracer        opentracing.Tracer
-	tracingCloser io.Closer
+	//tracer        opentracing.Tracer
+	//tracingCloser io.Closer
 
 	closeHandler sync.Once
 }
@@ -109,13 +108,13 @@ func NewHTTPServer(opt *option.Server) *HTTPServer {
 			return
 		})
 
-	tracer, closer, err := tracing.Init(opt.Registry, opt.TracingAgentAddr)
-	if err != nil {
-		log.Fatal(err, opt.Registry)
-	}
-	opentracing.SetGlobalTracer(tracer)
-	s.tracer = tracer
-	s.tracingCloser = closer
+	//tracer, closer, err := tracing.Init(opt.Registry, opt.TracingAgentAddr)
+	//if err != nil {
+	//	log.Fatal(err, opt.Registry)
+	//}
+	//opentracing.SetGlobalTracer(tracer)
+	//s.tracer = tracer
+	//s.tracingCloser = closer
 
 	go s.calcQPS()
 	return s
@@ -235,10 +234,9 @@ func (h *HTTPServer) Close(quitCh chan struct{}) {
 		go func() {
 			select {
 			case <-h.quitCh:
-				close(h.statsCh)
 				close(quitCh)
 			}
 		}()
-		h.tracingCloser.Close()
+		//h.tracingCloser.Close()
 	})
 }

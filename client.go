@@ -13,8 +13,9 @@ import (
 
 	"golang.org/x/net/http2"
 
-	opentracing "github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
+	//opentracing "github.com/opentracing/opentracing-go"
+	//"github.com/opentracing/opentracing-go/ext"
+
 	"github.com/tddhit/wox/option"
 )
 
@@ -63,8 +64,8 @@ func (c *client) Request(
 	header http.Header,
 	body []byte) (rspBody []byte, err error) {
 
-	span, _ := opentracing.StartSpanFromContext(ctx, path)
-	defer span.Finish()
+	//span, _ := opentracing.StartSpanFromContext(ctx, path)
+	//defer span.Finish()
 
 	if method != "POST" {
 		err = errUnsupportedMethod
@@ -81,13 +82,14 @@ func (c *client) Request(
 	}
 	req.Header = header
 
-	ext.SpanKindRPCClient.Set(span)
-	ext.HTTPMethod.Set(span, "POST")
-	span.Tracer().Inject(
-		span.Context(),
-		opentracing.HTTPHeaders,
-		opentracing.HTTPHeadersCarrier(req.Header),
-	)
+	//ext.SpanKindRPCClient.Set(span)
+	//ext.HTTPMethod.Set(span, "POST")
+	//span.Tracer().Inject(
+	//	span.Context(),
+	//	opentracing.HTTPHeaders,
+	//	opentracing.HTTPHeadersCarrier(req.Header),
+	//)
+	//log.Infof("Header:%s", req.Header)
 
 	if rsp, err = c.Do(req); err != nil {
 		return

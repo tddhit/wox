@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/time/rate"
 
-	opentracing "github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
+	//opentracing "github.com/opentracing/opentracing-go"
+	//"github.com/opentracing/opentracing-go/ext"
 	"github.com/tddhit/tools/log"
 )
 
@@ -53,11 +53,11 @@ func withParse(
 		s.requests.Unlock()
 
 		// tracing
-		var span opentracing.Span
-		spanCtx, _ := s.tracer.Extract(opentracing.HTTPHeaders,
-			opentracing.HTTPHeadersCarrier(req.Header))
-		span = s.tracer.StartSpan(pattern, ext.RPCServerOption(spanCtx))
-		defer span.Finish()
+		//var span opentracing.Span
+		//spanCtx, _ := s.tracer.Extract(opentracing.HTTPHeaders,
+		//	opentracing.HTTPHeadersCarrier(req.Header))
+		//span = s.tracer.StartSpan(pattern, ext.RPCServerOption(spanCtx))
+		//defer span.Finish()
 
 		var output []byte
 		start := time.Now()
@@ -79,7 +79,8 @@ func withParse(
 		}
 		input, _ := json.Marshal(newRealReq)
 		log.Infof("type=http\treq=%s\n", input)
-		ctx := opentracing.ContextWithSpan(context.Background(), span)
+		//ctx := opentracing.ContextWithSpan(context.Background(), span)
+		ctx := context.Background()
 		err = do(ctx, newRealReq, newRealRsp)
 		if err != nil {
 			output = []byte(err.Error())
