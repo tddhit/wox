@@ -22,11 +22,26 @@ const (
 	FORK = "FORK"
 )
 
+type msgType int
+
 const (
-	msgWorkerStats    = 1 + iota // worker->master
-	msgWorkerTakeover            // worker->master
-	msgWorkerQuit                // master->worker
+	msgWorkerStats    msgType = 1 + iota // worker->master
+	msgWorkerTakeover                    // worker->master
+	msgWorkerQuit                        // master->worker
 )
+
+func (m msgType) String() string {
+	switch m {
+	case msgWorkerStats:
+		return "stats"
+	case msgWorkerTakeover:
+		return "takeover"
+	case msgWorkerQuit:
+		return "quit"
+	default:
+		return fmt.Sprintf("unknown msg type:%d", m)
+	}
+}
 
 const (
 	DefaultWorkerNum = 2
@@ -37,7 +52,7 @@ var (
 )
 
 type message struct {
-	Typ   int
+	Typ   msgType
 	Value interface{}
 }
 

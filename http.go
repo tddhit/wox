@@ -235,6 +235,7 @@ func (h *HTTPServer) Close(quitCh chan struct{}) {
 		go func() {
 			select {
 			case <-h.quitCh:
+				close(h.statsCh)
 				close(quitCh)
 			}
 		}()

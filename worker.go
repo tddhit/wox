@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/tddhit/tools/log"
@@ -19,6 +20,7 @@ type worker struct {
 	listenAddr string
 	httpServer *HTTPServer
 	quitCh     chan struct{}
+	quitFlag   int32
 	uc         *net.UnixConn
 	pid        int    // worker pid
 	pidPath    string // master pid path
@@ -55,17 +57,16 @@ func (w *worker) run() {
 	go w.watchMaster()
 	go w.watchSignal()
 	go w.readMsg()
-	go w.listenServer()
 	go w.watchStats()
 	go w.httpServer.Serve()
 	reason := os.Getenv("REASON")
 	if reason == reasonReload {
 		if err := w.notifyMaster(&message{Typ: msgWorkerTakeover}); err == nil {
-			log.Infof("WriteMsg\tPid=%d\tMsg=%d\n", w.pid, msgWorkerTakeover)
+			log.Infof("WriteMsg\tPid=%d\tMsg=%s\n", w.pid, msgWorkerTakeover)
 		}
 	}
 	log.Infof("StartWorker\tPid=%d\tReason=%s\n", w.pid, reason)
-	select {}
+	<-w.quitCh
 }
 
 func (w *worker) register() {
@@ -113,28 +114,22 @@ func (w *worker) watchSignal() {
 
 func (w *worker) readMsg() {
 	for {
+		quitFlag := atomic.LoadInt32(&w.quitFlag)
+		if quitFlag == 1 {
+			break
+		}
 		msg, err := readMsg(w.uc, "worker", w.pid)
 		if err != nil {
-			if w.uc == nil {
-				break
-			} else {
-				log.Fatal(err)
-			}
+			log.Fatal(err)
 		}
 		switch msg.Typ {
 		case msgWorkerQuit:
-			log.Infof("ReadMsg\tPid=%d\tMsg=%d\n", w.pid, msg.Typ)
-			w.httpServer.Close(w.quitCh)
+			log.Infof("ReadMsg\tPid=%d\tMsg=%s\n", w.pid, msg.Typ)
+			if atomic.CompareAndSwapInt32(&w.quitFlag, 0, 1) {
+				w.uc.Close()
+				w.httpServer.Close(w.quitCh)
+			}
 		}
-	}
-}
-
-func (w *worker) listenServer() {
-	select {
-	case <-w.quitCh:
-		w.uc.Close()
-		w.uc = nil
-		os.Exit(0)
 	}
 }
 
