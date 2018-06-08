@@ -3,7 +3,6 @@ package wox
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -14,11 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/julienschmidt/httprouter"
+	opentracing "github.com/opentracing/opentracing-go"
 	"golang.org/x/net/http2"
 	"golang.org/x/time/rate"
 
-	"github.com/julienschmidt/httprouter"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox/naming"
 	"github.com/tddhit/wox/option"

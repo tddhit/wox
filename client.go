@@ -15,6 +15,7 @@ import (
 
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+
 	"github.com/tddhit/wox/option"
 )
 

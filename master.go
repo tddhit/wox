@@ -100,15 +100,16 @@ func (m *master) watchTarget() {
 		if ch, err := w.Watch(target); err != nil {
 			log.Fatal(err)
 		} else {
-			go func(ch etcd.WatchChan) {
+			go func(ch etcd.WatchChan, target string) {
 				for rsp := range ch {
+					log.Infof("WatchEvent\t%s\n", target)
 					for _, event := range rsp.Events {
 						log.Infof("WatchEvent\tType=%d\tKey=%s\tValue=%s\n",
 							event.Type, string(event.Kv.Key), string(event.Kv.Value))
 					}
 					m.reload()
 				}
-			}(ch)
+			}(ch, target)
 		}
 	}
 }
@@ -235,7 +236,7 @@ func (m *master) readMsg(pid int, uc *net.UnixConn) {
 			if m.aliveWorkers() >= m.workerNum {
 				m.notifyWorker(&message{Typ: msgWorkerQuit}, workerReload)
 			}
-			log.Infof("ReadMsg\tPid=%d\tMsg=%d\n", pid, msg.Typ)
+			log.Infof("ReadMsg\tPid=%d\tMsg=%s\n", pid, msg.Typ)
 		}
 	}
 }
@@ -280,7 +281,7 @@ func (m *master) notifyWorker(msg *message, states ...string) {
 			if _, _, err := uc.(*net.UnixConn).WriteMsgUnix(buf.Bytes(), nil, nil); err != nil {
 				log.Errorf("WriteMsg\tPid=%d\tErr=%s\n", pid, err.Error())
 			} else {
-				log.Infof("WriteMsg\tPid=%d\tMsg=%d\n", pid, msg.Typ)
+				log.Infof("WriteMsg\tPid=%d\tMsg=%s\n", pid, msg.Typ)
 			}
 		}
 		return true
