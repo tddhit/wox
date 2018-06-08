@@ -5,7 +5,7 @@ etcd:
 httpServer:
   httpVersion: 1.1
   registry: /service/hello
-  tracingAgentAddr: "127.0.0.1:6832"
+  tracingAgentAddr: "127.0.0.1:6831"
   addr: :7777
   readTimeout: 1000
   writeTimeout: 20000

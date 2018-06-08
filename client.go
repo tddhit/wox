@@ -79,7 +79,7 @@ func (c *client) Request(
 	if req, err = http.NewRequest(method, url, bodyBytes); err != nil {
 		return
 	}
-	req.Header = header
+	req.Header = copyHeader(header)
 
 	ext.SpanKindRPCClient.Set(span)
 	ext.HTTPMethod.Set(span, "POST")
@@ -101,4 +101,14 @@ func (c *client) Request(
 		return
 	}
 	return
+}
+
+func copyHeader(h http.Header) http.Header {
+	h2 := make(http.Header, len(h))
+	for k, vv := range h {
+		vv2 := make([]string, len(vv))
+		copy(vv2, vv)
+		h2[k] = vv2
+	}
+	return h2
 }

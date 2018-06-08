@@ -56,6 +56,7 @@ func withParse(
 		var span opentracing.Span
 		spanCtx, _ := s.tracer.Extract(opentracing.HTTPHeaders,
 			opentracing.HTTPHeadersCarrier(req.Header))
+
 		span = s.tracer.StartSpan(pattern, ext.RPCServerOption(spanCtx))
 		defer span.Finish()
 
@@ -66,6 +67,7 @@ func withParse(
 		newRealReq := reflect.New(reqType).Interface()
 		newRealRsp := reflect.New(rspType).Interface()
 		body, _ := ioutil.ReadAll(req.Body)
+
 		var err error
 		if contentType == "application/json" {
 			err = json.Unmarshal(body, newRealReq)
