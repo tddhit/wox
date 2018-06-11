@@ -3,6 +3,7 @@ package wox
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -36,7 +37,6 @@ type HTTPServer struct {
 	h2Server *http2.Server
 	listener net.Listener
 	statsCh  chan []byte
-	quitCh   chan struct{}
 	requests *requests
 
 	tracer        opentracing.Tracer
@@ -64,7 +64,6 @@ func NewHTTPServer(opt *option.Server) *HTTPServer {
 		opt:     opt,
 		mux:     mux,
 		statsCh: make(chan []byte, 100),
-		quitCh:  make(chan struct{}),
 		requests: &requests{
 			Data: make(map[string]int),
 		},
@@ -202,7 +201,6 @@ func (h *HTTPServer) Serve() (err error) {
 			} else {
 				log.Error(err, os.Getpid())
 			}
-			close(h.quitCh)
 		}
 	}()
 	if h.opt.HTTPVersion == "2.0" {
@@ -223,7 +221,7 @@ func (h *HTTPServer) Serve() (err error) {
 	return
 }
 
-func (h *HTTPServer) Close(quitCh chan struct{}) {
+func (h *HTTPServer) Close() {
 	h.closeHandler.Do(func() {
 		if h.h2Server == nil {
 			ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
@@ -231,12 +229,6 @@ func (h *HTTPServer) Close(quitCh chan struct{}) {
 		} else {
 			h.listener.Close()
 		}
-		go func() {
-			select {
-			case <-h.quitCh:
-				close(quitCh)
-			}
-		}()
 		h.tracingCloser.Close()
 	})
 }

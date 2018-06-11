@@ -50,7 +50,7 @@ func (a *echo2API) do(ctx context.Context, req, rsp interface{}) (err error) {
 
 func main() {
 	conf := &Conf{}
-	s := wox.NewServer("127.0.0.1:2379", "", "echo.yml", conf)
+	s := wox.NewServer("172.17.32.101:2379", "", "echo.yml", conf)
 	log.Init(conf.LogPath, conf.LogLevel)
 	handler := &echoAPI{}
 	s.AddHandler("/echo", &handler.req, &handler.rsp, handler.do, "application/json")

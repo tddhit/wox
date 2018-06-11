@@ -279,7 +279,7 @@ func (m *master) notifyWorker(msg *message, states ...string) {
 			var buf bytes.Buffer
 			gob.NewEncoder(&buf).Encode(msg)
 			if _, _, err := uc.(*net.UnixConn).WriteMsgUnix(buf.Bytes(), nil, nil); err != nil {
-				log.Errorf("WriteMsg\tPid=%d\tErr=%s\n", pid, err.Error())
+				log.Warnf("WriteMsg\tPid=%d\tErr=%s\n", pid, err.Error())
 			} else {
 				log.Infof("WriteMsg\tPid=%d\tMsg=%s\n", pid, msg.Typ)
 			}

@@ -60,7 +60,7 @@ func readMsg(conn *net.UnixConn, id string, pid int) (*message, error) {
 	buf := make([]byte, 1024)
 	msg := &message{}
 	if _, _, _, _, err := conn.ReadMsgUnix(buf, nil); err != nil {
-		log.Errorf("ReadMsg\tId=%s\tPid=%d\tErr=%s\n", id, pid, err.Error())
+		log.Warnf("ReadMsg\tId=%s\tPid=%d\tErr=%s\n", id, pid, err.Error())
 		return nil, err
 	}
 	if err := gob.NewDecoder(bytes.NewBuffer(buf)).Decode(msg); err != nil {

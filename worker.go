@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/tddhit/tools/log"
@@ -19,11 +19,12 @@ type worker struct {
 	registry   string
 	listenAddr string
 	httpServer *HTTPServer
-	quitCh     chan struct{}
-	quitFlag   int32
 	uc         *net.UnixConn
 	pid        int    // worker pid
 	pidPath    string // master pid path
+
+	exitCh chan struct{}
+	wg     sync.WaitGroup
 }
 
 func newWorker(registry, listenAddr, pidPath string,
@@ -33,9 +34,10 @@ func newWorker(registry, listenAddr, pidPath string,
 		registry:   registry,
 		listenAddr: listenAddr,
 		httpServer: httpServer,
-		quitCh:     make(chan struct{}),
 		pid:        os.Getpid(),
 		pidPath:    pidPath,
+
+		exitCh: make(chan struct{}),
 	}
 	file := os.NewFile(3, "")
 	if conn, err := net.FileConn(file); err != nil {
@@ -56,17 +58,36 @@ func (w *worker) run() {
 	}
 	go w.watchMaster()
 	go w.watchSignal()
-	go w.readMsg()
-	go w.watchStats()
-	go w.httpServer.Serve()
+
+	w.wg.Add(1)
+	go func() {
+		w.readMsg()
+		w.wg.Done()
+	}()
+
+	w.wg.Add(1)
+	go func() {
+		w.watchStats()
+		w.wg.Done()
+	}()
+
+	w.wg.Add(1)
+	go func() {
+		w.httpServer.Serve()
+		w.wg.Done()
+	}()
+
 	reason := os.Getenv("REASON")
 	if reason == reasonReload {
 		if err := w.notifyMaster(&message{Typ: msgWorkerTakeover}); err == nil {
 			log.Infof("WriteMsg\tPid=%d\tMsg=%s\n", w.pid, msgWorkerTakeover)
 		}
 	}
-	log.Infof("StartWorker\tPid=%d\tReason=%s\n", w.pid, reason)
-	<-w.quitCh
+	log.Infof("WorkerStart\tPid=%d\tReason=%s\n", w.pid, reason)
+	w.wg.Wait()
+
+	log.Infof("WorkerEnd\tPid=%d\n", w.pid)
+	w.close()
 }
 
 func (w *worker) register() {
@@ -114,10 +135,6 @@ func (w *worker) watchSignal() {
 
 func (w *worker) readMsg() {
 	for {
-		quitFlag := atomic.LoadInt32(&w.quitFlag)
-		if quitFlag == 1 {
-			break
-		}
 		msg, err := readMsg(w.uc, "worker", w.pid)
 		if err != nil {
 			log.Fatal(err)
@@ -125,18 +142,25 @@ func (w *worker) readMsg() {
 		switch msg.Typ {
 		case msgWorkerQuit:
 			log.Infof("ReadMsg\tPid=%d\tMsg=%s\n", w.pid, msg.Typ)
-			if atomic.CompareAndSwapInt32(&w.quitFlag, 0, 1) {
-				w.uc.Close()
-				w.httpServer.Close(w.quitCh)
-			}
+			goto exit
 		}
 	}
+exit:
+	close(w.exitCh)
+	w.httpServer.Close()
 }
 
 func (w *worker) watchStats() {
-	for stats := range w.httpServer.Stats() {
-		w.notifyMaster(&message{Typ: msgWorkerStats, Value: stats})
+	statsCh := w.httpServer.Stats()
+	for {
+		select {
+		case stats := <-statsCh:
+			w.notifyMaster(&message{Typ: msgWorkerStats, Value: stats})
+		case <-w.exitCh:
+			goto exit
+		}
 	}
+exit:
 }
 
 func (w *worker) notifyMaster(msg *message) (err error) {
@@ -147,4 +171,8 @@ func (w *worker) notifyMaster(msg *message) (err error) {
 		return
 	}
 	return
+}
+
+func (w *worker) close() {
+	w.uc.Close()
 }
