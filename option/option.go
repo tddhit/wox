@@ -32,6 +32,7 @@ type Location struct {
 
 type Upstream struct {
 	Enable         bool           `yaml:"enable"`
+	IsProxy        bool           `yaml:"isProxy"`
 	Locations      []Location     `yaml:"locations"`
 	Method         string         `yaml:"method"`
 	Registry       string         `yaml:"registry"`

@@ -31,7 +31,7 @@ type Upstream struct {
 }
 
 func NewUpstream(
-	opt option.Upstream,
+	opt *option.Upstream,
 	policy uint8) (*Upstream, error) {
 
 	u := &Upstream{

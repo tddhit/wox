@@ -9,12 +9,47 @@ import (
 	"reflect"
 	"time"
 
-	"golang.org/x/time/rate"
-
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/time/rate"
+
 	"github.com/tddhit/tools/log"
 )
+
+var (
+	httpRequestCount *prometheus.CounterVec
+	httpRequestError *prometheus.CounterVec
+	httpResponseTime *prometheus.SummaryVec
+)
+
+func init() {
+	httpRequestCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_request_count",
+			Help: "http request count",
+		},
+		[]string{"endpoint"},
+	)
+	httpRequestError = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_request_error",
+			Help: "http request error",
+		},
+		[]string{"endpoint"},
+	)
+	httpResponseTime = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name: "http_response_time",
+			Help: "http response time",
+		},
+		[]string{"endpoint"},
+	)
+
+	prometheus.MustRegister(httpRequestCount)
+	prometheus.MustRegister(httpRequestError)
+	prometheus.MustRegister(httpResponseTime)
+}
 
 type HandlerFunc func(ctx context.Context, req, rsp interface{}) (err error)
 
@@ -47,6 +82,11 @@ func withParse(
 	contentType string) http.HandlerFunc {
 
 	return func(rsp http.ResponseWriter, req *http.Request) {
+		start := time.Now()
+
+		// metrics
+		httpRequestCount.WithLabelValues(pattern).Inc()
+
 		// stats
 		s.requests.Lock()
 		s.requests.Data[pattern]++
@@ -61,7 +101,6 @@ func withParse(
 		defer span.Finish()
 
 		var output []byte
-		start := time.Now()
 		reqType := reflect.TypeOf(realReq).Elem()
 		rspType := reflect.TypeOf(realRsp).Elem()
 		newRealReq := reflect.New(reqType).Interface()
@@ -85,6 +124,7 @@ func withParse(
 		err = do(ctx, newRealReq, newRealRsp)
 		if err != nil {
 			output = []byte(err.Error())
+			httpRequestError.WithLabelValues(pattern).Inc()
 		} else {
 			output, _ = json.Marshal(newRealRsp)
 		}
@@ -92,8 +132,8 @@ func withParse(
 		rsp.Header().Set("Access-Control-Allow-Origin", "*")
 		rsp.Write(output)
 
-		end := time.Now()
-		elapsed := end.Sub(start)
-		log.Infof("type=http\treq=%s\trsp=%s\telapsed=%d\n", input, output, elapsed/1000000)
+		elapsed := float64(time.Since(start) / time.Millisecond)
+		httpResponseTime.WithLabelValues(pattern).Observe(elapsed)
+		log.Infof("type=http\treq=%s\trsp=%s\telapsed=%f\n", input, output, elapsed/1000000)
 	}
 }
