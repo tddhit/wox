@@ -16,6 +16,7 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/http2"
@@ -203,6 +204,28 @@ func (s *HTTPServer) AddProxyUpstream(opt *option.Upstream) error {
 			remote := urls[index]
 			req.URL.Scheme = remote.Scheme
 			req.URL.Host = remote.Host
+
+			pattern := req.URL.Path
+			// metrics
+			httpRequestCount.WithLabelValues(pattern).Inc()
+			// stats
+			s.requests.Lock()
+			s.requests.Data[pattern]++
+			s.requests.Unlock()
+			// tracing
+			var span opentracing.Span
+			spanCtx, _ := s.tracer.Extract(opentracing.HTTPHeaders,
+				opentracing.HTTPHeadersCarrier(req.Header))
+			span = s.tracer.StartSpan(pattern, ext.RPCServerOption(spanCtx))
+			defer span.Finish()
+
+			ext.SpanKindRPCClient.Set(span)
+			ext.HTTPMethod.Set(span, "POST")
+			span.Tracer().Inject(
+				span.Context(),
+				opentracing.HTTPHeaders,
+				opentracing.HTTPHeadersCarrier(req.Header),
+			)
 		},
 	}
 	for _, location := range opt.Locations {

@@ -5,11 +5,11 @@ import (
 )
 
 type Conf struct {
-	LogPath    string                      `yaml:"logpath"`
-	LogLevel   int                         `yaml:"loglevel"`
-	Etcd       []string                    `yaml:"etcd"`
-	HTTPServer *httpopt.Server             `yaml:"httpServer"`
-	Upstream   map[string]httpopt.Upstream `yaml:"upstream"`
+	LogPath    string                       `yaml:"logpath"`
+	LogLevel   int                          `yaml:"loglevel"`
+	Etcd       []string                     `yaml:"etcd"`
+	HTTPServer *httpopt.Server              `yaml:"httpServer"`
+	Upstream   map[string]*httpopt.Upstream `yaml:"upstream"`
 }
 
 func (c *Conf) Server() *httpopt.Server {
