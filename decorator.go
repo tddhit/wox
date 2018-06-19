@@ -88,9 +88,9 @@ func withParse(
 		httpRequestCount.WithLabelValues(pattern).Inc()
 
 		// stats
-		s.requests.Lock()
-		s.requests.Data[pattern]++
-		s.requests.Unlock()
+		globalStats().Lock()
+		globalStats().Method[pattern]++
+		globalStats().Unlock()
 
 		// tracing
 		var span opentracing.Span

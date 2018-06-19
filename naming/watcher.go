@@ -29,7 +29,7 @@ func (w *Watcher) Watch(target string) (watchCh etcd.WatchChan, err error) {
 		done <- struct{}{}
 	}()
 	select {
-	case <-time.After(w.Timeout * time.Millisecond):
+	case <-time.After(w.Timeout):
 		err = errTimeout
 		log.Errorf("watch %s timeout.\n", target)
 	case <-done:

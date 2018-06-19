@@ -2,51 +2,66 @@ package wox
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
 	"sync"
 )
 
-type stats struct {
-	sync.Mutex
-	Master *processStats         `json:"master"`
-	Worker map[int]*processStats `json:"worker"`
-	html   string
+var (
+	gStats *stats
+	once   sync.Once
+)
+
+func globalStats() *stats {
+	once.Do(func() {
+		gStats = newStats()
+	})
+	return gStats
 }
 
-type processStats struct {
+type stats struct {
+	sync.Mutex
 	Id     int            `json:"id"`
 	QPS    int            `json:"qps"`
 	Method map[string]int `json:"method"`
+	data   []byte
+	html   string
 }
 
 func newStats() *stats {
-	s := &stats{
-		Master: &processStats{
-			Method: make(map[string]int),
-		},
-		Worker: make(map[int]*processStats),
-	}
 	var buf bytes.Buffer
 	buf.WriteString(statsBeginHTML)
 	buf.WriteString(statsJS)
 	buf.WriteString(statsEndHTML)
-	s.html = buf.String()
-	return s
-}
 
-func (s *stats) resetMaster() {
-	s.Master.Id = 0
-	s.Master.QPS = 0
-	for name, _ := range s.Master.Method {
-		s.Master.Method[name] = 0
+	return &stats{
+		Id:     os.Getpid(),
+		Method: make(map[string]int),
+		html:   buf.String(),
 	}
 }
 
-func (s *stats) resetWorker(pid int) {
-	s.Worker[pid].Id = 0
-	s.Worker[pid].QPS = 0
-	for name, _ := range s.Worker[pid].Method {
-		s.Worker[pid].Method[name] = 0
+func (s *stats) calculate() {
+	s.Lock()
+	defer s.Unlock()
+
+	for _, qps := range s.Method {
+		s.QPS += qps
 	}
+	s.data, _ = json.Marshal(s)
+
+	// reset
+	s.QPS = 0
+	for name, _ := range s.Method {
+		s.Method[name] = 0
+	}
+}
+
+func (s *stats) bytes() []byte {
+	s.Lock()
+	defer s.Unlock()
+
+	return s.data
 }
 
 const statsJS = `

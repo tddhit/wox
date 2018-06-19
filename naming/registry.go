@@ -54,6 +54,10 @@ func (r *Registry) Register() {
 	r.ctx, r.cancel = ctx, cancel
 }
 
+func (r *Registry) Unregister() {
+	r.cancel()
+}
+
 func (r *Registry) Close() {
 	r.cancel()
 }

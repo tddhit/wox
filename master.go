@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -21,37 +20,56 @@ import (
 	"github.com/tddhit/wox/naming"
 )
 
-const (
-	workerAlive  = "alive"
-	workerReload = "reload"
-	workerQuit   = "quit"
-	workerCrash  = "crash"
+type workerState int
 
+const (
+	workerAlive workerState = iota
+	workerReload
+	workerQuit
+	workerCrash
+)
+
+func (s workerState) String() string {
+	switch s {
+	case workerAlive:
+		return "alive"
+	case workerReload:
+		return "reload"
+	case workerQuit:
+		return "quit"
+	case workerCrash:
+		return "crash"
+	default:
+		return fmt.Sprintf("unknown worker state:%d", s)
+	}
+}
+
+const (
 	reasonStart  = "start"
 	reasonReload = "reload"
 	reasonCrash  = "crash"
+
+	workerNum = 1
 )
 
 type master struct {
-	targets    []string
-	children   sync.Map // key: pid, value:state
-	uc         sync.Map // key: pid, value:UnixConn
-	stats      *stats
-	workerNum  int
-	pid        int
-	pidPath    string
-	listenAddr string
+	addr     string
+	targets  []string // for watch
+	pid      int
+	pidPath  string
+	uc       sync.Map // key: pid, value:UnixConn
+	children sync.Map // key: pid, value:state
+	exitC    chan struct{}
 }
 
-func newMaster(targets []string, listenAddr, pidPath string, workerNum int) *master {
+func newMaster(addr string, targets []string, pidPath string) *master {
 	m := &master{
-		targets:    targets,
-		listenAddr: listenAddr,
-		workerNum:  workerNum,
-		pid:        os.Getpid(),
-		pidPath:    pidPath,
+		addr:    addr,
+		targets: targets,
+		pid:     os.Getpid(),
+		pidPath: pidPath,
+		exitC:   make(chan struct{}),
 	}
-	m.stats = newStats()
 	return m
 }
 
@@ -60,17 +78,37 @@ func (m *master) run() {
 	if err := os.Setenv(FORK, "1"); err != nil {
 		log.Fatal(err)
 	}
-	for i := 0; i < m.workerNum; i++ {
+	for i := 0; i < workerNum; i++ {
 		if _, err := m.fork(reasonStart); err != nil {
 			log.Fatal(err)
 		}
 	}
 	go m.watchTarget()
 	go m.watchChildren()
-	go m.watchSignal()
 	go m.listenAndServe()
+
 	log.Infof("StartMaster\tPid=%d\n", m.pid)
-	select {}
+	signalC := make(chan os.Signal)
+	signal.Notify(signalC)
+	for {
+		select {
+		case sig := <-signalC:
+			log.Infof("WatchSignal\tPid=%d\tSig=%s\n", m.pid, sig.String())
+			switch sig {
+			case syscall.SIGHUP:
+				m.reload()
+			case syscall.SIGINT:
+				fallthrough
+			case syscall.SIGQUIT:
+				m.graceful()
+				goto exit
+			case syscall.SIGTERM:
+				m.rough()
+				goto exit
+			}
+		}
+	}
+exit:
 }
 
 func (m *master) savePID() {
@@ -95,7 +133,7 @@ func (m *master) watchTarget() {
 		log.Infof("WatchTarget\tTarget=%s\n", target)
 		w := &naming.Watcher{
 			Client:  GlobalEtcdClient(),
-			Timeout: 2000,
+			Timeout: 2 * time.Second,
 		}
 		if ch, err := w.Watch(target); err != nil {
 			log.Fatal(err)
@@ -117,10 +155,8 @@ func (m *master) watchTarget() {
 func (m *master) watchChildren() {
 	f := func(key, value interface{}) bool {
 		pid := key.(int)
-		state := value.(string)
+		state := value.(workerState)
 		switch state {
-		case workerAlive:
-		case workerReload:
 		case workerCrash:
 			if _, err := m.fork(reasonCrash); err != nil {
 				log.Error(err)
@@ -129,34 +165,12 @@ func (m *master) watchChildren() {
 		case workerQuit:
 			m.children.Delete(pid)
 			m.uc.Delete(pid)
-			m.stats.Lock()
-			delete(m.stats.Worker, pid)
-			m.stats.Unlock()
 		}
 		return true
 	}
 	tick := time.Tick(1 * time.Second)
 	for range tick {
 		m.children.Range(f)
-	}
-}
-
-func (m *master) watchSignal() {
-	c := make(chan os.Signal)
-	signal.Notify(c)
-	for {
-		sig := <-c
-		log.Infof("WatchSignal\tPid=%d\tSig=%s\n", m.pid, sig.String())
-		switch sig {
-		case syscall.SIGHUP:
-			m.reload()
-		case syscall.SIGINT:
-			fallthrough
-		case syscall.SIGQUIT:
-			m.graceful()
-		case syscall.SIGTERM:
-			m.rough()
-		}
 	}
 }
 
@@ -167,8 +181,9 @@ func (m *master) fork(reason string) (pid int, err error) {
 		return
 	}
 	execSpec := &syscall.ProcAttr{
-		Env:   append(os.Environ(), "REASON="+reason),
-		Files: []uintptr{os.Stdin.Fd(), os.Stdout.Fd(), os.Stderr.Fd(), uintptr(fds[1])},
+		Env: append(os.Environ(), "REASON="+reason, "PPID="+strconv.Itoa(m.pid)),
+		Files: []uintptr{os.Stdin.Fd(), os.Stdout.Fd(), os.Stderr.Fd(),
+			uintptr(fds[1])},
 	}
 	pid, err = syscall.ForkExec(os.Args[0], os.Args, execSpec)
 	if err != nil {
@@ -181,11 +196,7 @@ func (m *master) fork(reason string) (pid int, err error) {
 	m.uc.Store(pid, uc)
 	m.children.Store(pid, workerAlive)
 	syscall.Close(fds[1])
-	m.stats.Lock()
-	m.stats.Worker[pid] = &processStats{
-		Method: make(map[string]int),
-	}
-	m.stats.Unlock()
+
 	go m.waitWorker(pid)
 	go m.readMsg(pid, uc)
 	return
@@ -197,7 +208,7 @@ func (m *master) waitWorker(pid int) {
 	status := state.Sys().(syscall.WaitStatus)
 	if status.ExitStatus() != 0 {
 		m.children.Store(pid, workerCrash)
-		log.Errorf("WorkerCrash\tPid=%d\n", pid)
+		log.Errorf("WorkerCrash\tPid=%d\tStatus=%d\n", pid, status.ExitStatus())
 	} else {
 		m.children.Store(pid, workerQuit)
 		log.Infof("WorkerQuit\tPid=%d\n", pid)
@@ -221,21 +232,8 @@ func (m *master) readMsg(pid int, uc *net.UnixConn) {
 			break
 		}
 		switch msg.Typ {
-		case msgWorkerStats:
-			var stats map[string]int
-			json.Unmarshal(msg.Value.([]byte), &stats)
-			m.stats.Lock()
-			m.stats.resetWorker(pid)
-			for k, v := range stats {
-				m.stats.Worker[pid].Id = pid
-				m.stats.Worker[pid].QPS += v
-				m.stats.Worker[pid].Method[k] = v
-			}
-			m.stats.Unlock()
-		case msgWorkerTakeover:
-			if m.aliveWorkers() >= m.workerNum {
-				m.notifyWorker(&message{Typ: msgWorkerQuit}, workerReload)
-			}
+		case msgTakeover:
+			m.notifyWorker(&message{Typ: msgQuit}, workerReload)
 			log.Infof("ReadMsg\tPid=%d\tMsg=%s\n", pid, msg.Typ)
 		}
 	}
@@ -244,24 +242,24 @@ func (m *master) readMsg(pid int, uc *net.UnixConn) {
 func (m *master) reload() {
 	f := func(key, value interface{}) bool {
 		pid := key.(int)
-		state := value.(string)
+		state := value.(workerState)
 		if state == workerAlive {
 			m.children.Store(pid, workerReload)
 		}
 		return true
 	}
 	m.children.Range(f)
-	for i := 0; i < m.workerNum; i++ {
+	for i := 0; i < workerNum; i++ {
 		if _, err := m.fork(reasonReload); err != nil {
 			log.Error(err)
 		}
 	}
 }
 
-func (m *master) notifyWorker(msg *message, states ...string) {
+func (m *master) notifyWorker(msg *message, states ...workerState) {
 	f := func(key, value interface{}) bool {
 		pid := key.(int)
-		curState := value.(string)
+		curState := value.(workerState)
 		match := false
 		for _, state := range states {
 			if curState == state {
@@ -290,9 +288,9 @@ func (m *master) notifyWorker(msg *message, states ...string) {
 }
 
 func (m *master) graceful() {
-	m.notifyWorker(&message{Typ: msgWorkerQuit}, workerAlive, workerReload)
+	m.notifyWorker(&message{Typ: msgQuit}, workerAlive, workerReload)
 	select {
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		f := func(key, value interface{}) bool {
 			uc := value.(*net.UnixConn)
 			uc.Close()
@@ -300,14 +298,13 @@ func (m *master) graceful() {
 		}
 		m.uc.Range(f)
 		m.removePID()
-		os.Exit(0)
 	}
 }
 
 func (m *master) rough() {
 	f := func(key, value interface{}) bool {
 		pid := key.(int)
-		state := value.(string)
+		state := value.(workerState)
 		if state == workerAlive || state == workerReload {
 			log.Infof("SIGKILL\tPid=%d\tState=%s\n", pid, state)
 			if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
@@ -318,32 +315,16 @@ func (m *master) rough() {
 	}
 	m.children.Range(f)
 	m.removePID()
-	os.Exit(1)
 }
 
 func (m *master) listenAndServe() {
 	http.HandleFunc("/stats", m.doStats)
-	http.HandleFunc("/status", m.doStatus)
-	http.HandleFunc("/stats.html", m.doStatsHTML)
-	if err := http.ListenAndServe(m.listenAddr, nil); err != nil {
+	if err := http.ListenAndServe(m.addr, nil); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (m *master) aliveWorkers() int {
-	count := 0
-	f := func(key, value interface{}) bool {
-		state := value.(string)
-		if state == workerAlive || state == workerReload {
-			count++
-		}
-		return true
-	}
-	m.children.Range(f)
-	return count
-}
-
-func (m *master) doStatus(rsp http.ResponseWriter, req *http.Request) {
+func (m *master) doStats(rsp http.ResponseWriter, req *http.Request) {
 	var jsonRsp struct {
 		Code    int    `json:"code"`
 		Error   string `json:"error"`
@@ -351,55 +332,20 @@ func (m *master) doStatus(rsp http.ResponseWriter, req *http.Request) {
 	}
 	count := 0
 	f := func(key, value interface{}) bool {
-		state := value.(string)
+		state := value.(workerState)
 		if state == workerAlive {
 			count++
 		}
 		return true
 	}
 	m.children.Range(f)
-	if count != m.workerNum {
+	if count != workerNum {
 		jsonRsp.Code = 207
-		jsonRsp.Error = fmt.Sprintf("WorkersNum is %d, not %d\n",
-			count, m.workerNum)
+		jsonRsp.Error = fmt.Sprintf("WorkersNum is %d, not %d\n", count, workerNum)
 	} else {
 		jsonRsp.Code = 200
 	}
 	jsonRsp.Version = VERSION
 	out, _ := json.Marshal(jsonRsp)
 	rsp.Write(out)
-}
-
-func (m *master) doStats(rsp http.ResponseWriter, req *http.Request) {
-	m.stats.Lock()
-	m.stats.resetMaster()
-	m.stats.Master.Id = m.pid
-	for _, workerStats := range m.stats.Worker {
-		for name, qps := range workerStats.Method {
-			m.stats.Master.QPS += qps
-			m.stats.Master.Method[name] += qps
-		}
-	}
-	out, _ := json.Marshal(m.stats)
-	m.stats.Unlock()
-	rsp.Header().Set("Content-Type", "application/json; charset=utf-8")
-	rsp.Header().Set("Access-Control-Allow-Origin", "*")
-	rsp.Write(out)
-}
-
-func (m *master) doStatsHTML(rsp http.ResponseWriter, req *http.Request) {
-	err := req.ParseForm()
-	if err != nil {
-		rsp.Write([]byte(err.Error()))
-	}
-	html := m.stats.html
-	addr := req.FormValue("addr")
-	if addr != "" {
-		html = strings.Replace(m.stats.html, "##ListenAddr##", addr, 1)
-	} else {
-		html = strings.Replace(m.stats.html, "##ListenAddr##",
-			m.listenAddr, 1)
-	}
-	rsp.Header().Set("Content-Type", "text/html; charset=utf-8")
-	rsp.Write([]byte(html))
 }

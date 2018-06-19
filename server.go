@@ -1,17 +1,14 @@
 package wox
 
 import (
-	"bytes"
-	"encoding/gob"
 	"fmt"
-	"net"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	etcd "github.com/coreos/etcd/clientv3"
+
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox/confcenter"
 	"github.com/tddhit/wox/naming"
@@ -22,69 +19,26 @@ const (
 	FORK = "FORK"
 )
 
-type msgType int
-
-const (
-	msgWorkerStats    msgType = 1 + iota // worker->master
-	msgWorkerTakeover                    // worker->master
-	msgWorkerQuit                        // master->worker
-)
-
-func (m msgType) String() string {
-	switch m {
-	case msgWorkerStats:
-		return "stats"
-	case msgWorkerTakeover:
-		return "takeover"
-	case msgWorkerQuit:
-		return "quit"
-	default:
-		return fmt.Sprintf("unknown msg type:%d", m)
-	}
-}
-
-const (
-	DefaultWorkerNum = 2
-)
-
 var (
-	globalEtcdClient *etcd.Client
+	gEtcdClient *etcd.Client
 )
-
-type message struct {
-	Typ   msgType
-	Value interface{}
-}
-
-func readMsg(conn *net.UnixConn, id string, pid int) (*message, error) {
-	buf := make([]byte, 1024)
-	msg := &message{}
-	if _, _, _, _, err := conn.ReadMsgUnix(buf, nil); err != nil {
-		log.Warnf("ReadMsg\tId=%s\tPid=%d\tErr=%s\n", id, pid, err.Error())
-		return nil, err
-	}
-	if err := gob.NewDecoder(bytes.NewBuffer(buf)).Decode(msg); err != nil {
-		return nil, err
-	}
-	return msg, nil
-}
 
 func setGlobalEtcdClient(ec *etcd.Client) {
-	globalEtcdClient = ec
+	gEtcdClient = ec
 }
 
 func GlobalEtcdClient() *etcd.Client {
-	return globalEtcdClient
+	return gEtcdClient
 }
 
 type WoxServer struct {
-	pidPath    string
-	registry   string
-	masterAddr string
-	workerAddr string
-	targets    []string
-	workerNum  int
-	httpServer *HTTPServer
+	registry      string
+	targets       []string
+	pidPath       string
+	masterAddr    string
+	workerAddr    string
+	transportAddr string
+	httpServer    *HTTPServer
 }
 
 func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxServer {
@@ -92,7 +46,7 @@ func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxSe
 	endpoints := strings.Split(etcdAddrs, ",")
 	cfg := etcd.Config{
 		Endpoints:   endpoints,
-		DialTimeout: 2000 * time.Millisecond,
+		DialTimeout: 2 * time.Second,
 	}
 	ec, err := etcd.New(cfg)
 	if err != nil {
@@ -104,7 +58,7 @@ func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxSe
 	if confKey != "" {
 		r := &confcenter.Resolver{
 			Client:  GlobalEtcdClient(),
-			Timeout: 2000 * time.Millisecond,
+			Timeout: 2 * time.Second,
 		}
 		if err := r.Save(confKey, confPath); err != nil {
 			log.Fatal(err)
@@ -114,12 +68,10 @@ func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxSe
 		log.Fatal(err)
 	}
 
-	httpServer := NewHTTPServer(conf.Server())
 	s := &WoxServer{
 		pidPath:    conf.Server().PIDPath,
 		registry:   conf.Server().Registry,
-		workerNum:  conf.Server().WorkerNum,
-		httpServer: httpServer,
+		httpServer: NewHTTPServer(conf.Server()),
 	}
 	s.AddWatchTarget(confKey)
 
@@ -131,26 +83,17 @@ func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxSe
 		s.pidPath = fmt.Sprintf("/var/%s.pid", name[len(name)-1])
 	}
 
-	if s.workerNum == 0 {
-		s.workerNum = DefaultWorkerNum
+	s.transportAddr = naming.GetLocalAddr(conf.Server().TransportAddr)
+	if conf.Server().MasterAddr != "" {
+		s.masterAddr = naming.GetLocalAddr(conf.Server().MasterAddr)
 	} else {
-		cpuNum := runtime.NumCPU()
-		if s.workerNum > cpuNum {
-			s.workerNum = cpuNum
-		}
+		s.masterAddr = getDefaultAddr(s.transportAddr, 1)
 	}
-
-	s.workerAddr = naming.GetLocalAddr(conf.Server().Addr)
-	if conf.Server().StatusAddr != "" {
-		s.masterAddr = naming.GetLocalAddr(conf.Server().StatusAddr)
+	if conf.Server().WorkerAddr != "" {
+		s.workerAddr = naming.GetLocalAddr(conf.Server().WorkerAddr)
 	} else {
-		addr := strings.Split(conf.Server().Addr, ":")
-		port, _ := strconv.Atoi(addr[len(addr)-1])
-		addr[len(addr)-1] = strconv.Itoa(port + 1)
-		statusAddr := strings.Join(addr, ":")
-		s.masterAddr = naming.GetLocalAddr(statusAddr)
+		s.workerAddr = getDefaultAddr(s.transportAddr, 2)
 	}
-
 	return s
 }
 
@@ -158,14 +101,6 @@ func (s *WoxServer) AddWatchTarget(target string) {
 	if target != "" {
 		s.targets = append(s.targets, target)
 	}
-}
-
-func (s *WoxServer) ListenAddr() string {
-	return s.workerAddr
-}
-
-func (s *WoxServer) statusAddr() string {
-	return s.masterAddr
 }
 
 func (s *WoxServer) AddHandler(pattern string, req, rsp interface{},
@@ -177,10 +112,23 @@ func (s *WoxServer) AddProxyUpstream(opt *option.Upstream) error {
 	return s.httpServer.AddProxyUpstream(opt)
 }
 
+func (s *WoxServer) TransportAddr() string {
+	return s.transportAddr
+}
+
 func (s *WoxServer) Go() {
 	if os.Getenv(FORK) == "1" {
-		newWorker(s.registry, s.workerAddr, s.pidPath, s.httpServer).run()
+		newWorker(s.workerAddr, s.registry, s.httpServer).run()
 	} else {
-		newMaster(s.targets, s.masterAddr, s.pidPath, s.workerNum).run()
+		newMaster(s.masterAddr, s.targets, s.pidPath).run()
 	}
+}
+
+// get default masterAddr/workerAddr.
+// eg. transportAddr:80, masterAddr:81, workerAddr:82
+func getDefaultAddr(addr string, n int) string {
+	a := strings.Split(addr, ":")
+	port, _ := strconv.Atoi(a[len(a)-1])
+	a[len(a)-1] = strconv.Itoa(port + n)
+	return strings.Join(a, ":")
 }

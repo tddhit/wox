@@ -44,8 +44,9 @@ type Upstream struct {
 type Server struct {
 	HTTPVersion      string         `yaml:"httpVersion"`
 	Registry         string         `yaml:"registry"`
-	Addr             string         `yaml:"addr"`
-	StatusAddr       string         `yaml:"statusAddr"`
+	MasterAddr       string         `yaml:"masterAddr"`
+	WorkerAddr       string         `yaml:"workerAddr"`
+	TransportAddr    string         `yaml:"addr"`
 	TracingAgentAddr string         `yaml:"tracingAgentAddr"`
 	PIDPath          string         `yaml:"pidPath"`
 	WorkerNum        int            `yaml:"workerNum"`

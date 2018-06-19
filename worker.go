@@ -1,43 +1,41 @@
 package wox
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/gob"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox/naming"
+	"github.com/tddhit/wox/transport"
 )
 
 type worker struct {
-	registry   string
-	listenAddr string
-	httpServer *HTTPServer
-	uc         *net.UnixConn
-	pid        int    // worker pid
-	pidPath    string // master pid path
-
-	exitCh chan struct{}
-	wg     sync.WaitGroup
+	addr     string
+	registry string
+	pid      int
+	ppid     int
+	uc       *net.UnixConn
+	exitCh   chan struct{}
+	wg       sync.WaitGroup
+	r        *naming.Registry
+	server   transport.Server
 }
 
-func newWorker(registry, listenAddr, pidPath string,
-	httpServer *HTTPServer) *worker {
-
+func newWorker(addr, registry string, server transport.Server) *worker {
 	w := &worker{
-		registry:   registry,
-		listenAddr: listenAddr,
-		httpServer: httpServer,
-		pid:        os.Getpid(),
-		pidPath:    pidPath,
-
-		exitCh: make(chan struct{}),
+		addr:     addr,
+		registry: registry,
+		pid:      os.Getpid(),
+		exitCh:   make(chan struct{}),
+		server:   server,
 	}
 	file := os.NewFile(3, "")
 	if conn, err := net.FileConn(file); err != nil {
@@ -49,13 +47,13 @@ func newWorker(registry, listenAddr, pidPath string,
 			log.Fatal(err)
 		}
 	}
+	ppid := os.Getenv("PPID")
+	w.ppid, _ = strconv.Atoi(ppid)
 	return w
 }
 
 func (w *worker) run() {
-	if len(w.registry) > 0 {
-		w.register()
-	}
+	w.register()
 	go w.watchMaster()
 	go w.watchSignal()
 
@@ -67,68 +65,49 @@ func (w *worker) run() {
 
 	w.wg.Add(1)
 	go func() {
-		w.watchStats()
-		w.wg.Done()
-	}()
-
-	w.wg.Add(1)
-	go func() {
-		w.httpServer.Serve()
+		w.server.Serve()
 		w.wg.Done()
 	}()
 
 	reason := os.Getenv("REASON")
 	if reason == reasonReload {
-		if err := w.notifyMaster(&message{Typ: msgWorkerTakeover}); err == nil {
-			log.Infof("WriteMsg\tPid=%d\tMsg=%s\n", w.pid, msgWorkerTakeover)
+		if err := w.notifyMaster(&message{Typ: msgTakeover}); err == nil {
+			log.Infof("WriteMsg\tPid=%d\tMsg=%s\n", w.pid, msgTakeover)
 		}
 	}
 	log.Infof("WorkerStart\tPid=%d\tReason=%s\n", w.pid, reason)
 	w.wg.Wait()
-
 	log.Infof("WorkerEnd\tPid=%d\n", w.pid)
-	w.close()
 }
 
 func (w *worker) register() {
-	r := &naming.Registry{
+	if len(w.registry) == 0 {
+		return
+	}
+	w.r = &naming.Registry{
 		Client:     GlobalEtcdClient(),
-		Timeout:    2000 * time.Millisecond,
+		Timeout:    2 * time.Second,
 		TTL:        3,
 		Target:     w.registry,
-		ListenAddr: w.listenAddr,
+		ListenAddr: w.addr,
 	}
-	r.Register()
+	w.r.Register()
 }
 
 func (w *worker) watchMaster() {
-	f, err := os.Open(w.pidPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	r := bufio.NewReader(f)
-	s, err := r.ReadString('\n')
-	if err != nil {
-		log.Fatal(err)
-	}
-	s = s[:len(s)-1]
-	pid, err := strconv.Atoi(s)
-	if err != nil {
-		log.Fatal(err)
-	}
 	tick := time.Tick(1 * time.Second)
 	for range tick {
-		if os.Getppid() != pid {
-			os.Exit(1)
+		if os.Getppid() != w.ppid {
+			log.Fatal("MasterWorker is dead:", os.Getppid(), w.ppid)
 		}
 	}
 }
 
 func (w *worker) watchSignal() {
-	c := make(chan os.Signal)
-	signal.Notify(c)
+	signalC := make(chan os.Signal)
+	signal.Notify(signalC)
 	for {
-		sig := <-c
+		sig := <-signalC
 		log.Infof("WatchSignal\tPid=%d\tSig=%s\n", w.pid, sig.String())
 	}
 }
@@ -140,27 +119,13 @@ func (w *worker) readMsg() {
 			log.Fatal(err)
 		}
 		switch msg.Typ {
-		case msgWorkerQuit:
+		case msgQuit:
 			log.Infof("ReadMsg\tPid=%d\tMsg=%s\n", w.pid, msg.Typ)
 			goto exit
 		}
 	}
 exit:
-	close(w.exitCh)
-	w.httpServer.Close()
-}
-
-func (w *worker) watchStats() {
-	statsCh := w.httpServer.Stats()
-	for {
-		select {
-		case stats := <-statsCh:
-			w.notifyMaster(&message{Typ: msgWorkerStats, Value: stats})
-		case <-w.exitCh:
-			goto exit
-		}
-	}
-exit:
+	w.close()
 }
 
 func (w *worker) notifyMaster(msg *message) (err error) {
@@ -173,6 +138,34 @@ func (w *worker) notifyMaster(msg *message) (err error) {
 	return
 }
 
+func (w *worker) doStats(rsp http.ResponseWriter, req *http.Request) {
+	rsp.Header().Set("Content-Type", "application/json; charset=utf-8")
+	rsp.Header().Set("Access-Control-Allow-Origin", "*")
+	rsp.Write(globalStats().bytes())
+}
+
+func (w *worker) doStatsHTML(rsp http.ResponseWriter, req *http.Request) {
+	if err := req.ParseForm(); err != nil {
+		rsp.Write([]byte(err.Error()))
+	}
+	var (
+		html string
+		addr = req.FormValue("addr")
+	)
+	if addr != "" {
+		html = strings.Replace(globalStats().html, "##ListenAddr##", addr, 1)
+	} else {
+		html = strings.Replace(globalStats().html, "##ListenAddr##", w.addr, 1)
+	}
+	rsp.Header().Set("Content-Type", "text/html; charset=utf-8")
+	rsp.Write([]byte(html))
+}
+
 func (w *worker) close() {
-	w.uc.Close()
+	w.r.Unregister()
+	time.AfterFunc(time.Duration(w.r.TTL+1)*time.Second, func() {
+		w.uc.Close()
+		close(w.exitCh)
+		w.server.Close()
+	})
 }

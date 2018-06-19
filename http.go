@@ -2,7 +2,6 @@ package wox
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -43,24 +42,15 @@ func init() {
 	prometheus.MustRegister(httpQPS)
 }
 
-type requests struct {
-	sync.Mutex
-	Data map[string]int
-}
-
 type HTTPServer struct {
-	opt      *option.Server
-	mux      *httprouter.Router
-	h1Server *http.Server
-	h2Server *http2.Server
-	listener net.Listener
-	statsCh  chan []byte
-	requests *requests
-
+	opt           *option.Server
+	mux           *httprouter.Router
+	h1Server      *http.Server
+	h2Server      *http2.Server
+	listener      net.Listener
+	closeHandler  sync.Once
 	tracer        opentracing.Tracer
 	tracingCloser io.Closer
-
-	closeHandler sync.Once
 }
 
 func NewHTTPServer(opt *option.Server) *HTTPServer {
@@ -79,14 +69,10 @@ func NewHTTPServer(opt *option.Server) *HTTPServer {
 	}
 	timeoutHandler := http.TimeoutHandler(mux, writeTimeout*time.Millisecond, Err503Rsp.Error())
 	s := &HTTPServer{
-		opt:     opt,
-		mux:     mux,
-		statsCh: make(chan []byte, 100),
-		requests: &requests{
-			Data: make(map[string]int),
-		},
+		opt: opt,
+		mux: mux,
 	}
-	addr := naming.GetLocalAddr(opt.Addr)
+	addr := naming.GetLocalAddr(opt.TransportAddr)
 	if opt.HTTPVersion == "2.0" {
 		s.h1Server = &http.Server{
 			Addr:        addr,
@@ -138,31 +124,15 @@ func NewHTTPServer(opt *option.Server) *HTTPServer {
 	return s
 }
 
-func (s *HTTPServer) Stats() <-chan []byte {
-	return s.statsCh
-}
-
 func (s *HTTPServer) calcQPS() {
 	tick := time.Tick(1 * time.Second)
 	for range tick {
-		s.requests.Lock()
-		out, _ := json.Marshal(s.requests.Data)
-		s.requests.Unlock()
-		s.statsCh <- out
-		s.requests.Lock()
-		for k, v := range s.requests.Data {
-			httpQPS.WithLabelValues(k).Set(float64(v))
-			s.requests.Data[k] = 0
-		}
-		s.requests.Unlock()
+		globalStats().calculate()
 	}
 }
 
-func (s *HTTPServer) AddHandler(
-	pattern string,
-	req, rsp interface{},
-	h HandlerFunc,
-	contentType string) {
+func (s *HTTPServer) AddHandler(pattern string, req, rsp interface{},
+	h HandlerFunc, contentType string) {
 
 	if os.Getenv(FORK) != "1" {
 		return
@@ -208,10 +178,12 @@ func (s *HTTPServer) AddProxyUpstream(opt *option.Upstream) error {
 			pattern := req.URL.Path
 			// metrics
 			httpRequestCount.WithLabelValues(pattern).Inc()
+
 			// stats
-			s.requests.Lock()
-			s.requests.Data[pattern]++
-			s.requests.Unlock()
+			globalStats().Lock()
+			globalStats().Method[pattern]++
+			globalStats().Unlock()
+
 			// tracing
 			var span opentracing.Span
 			spanCtx, _ := s.tracer.Extract(opentracing.HTTPHeaders,
