@@ -201,7 +201,8 @@ func (s *HTTPServer) AddProxyUpstream(opt *option.Upstream) error {
 	return nil
 }
 
-func (h *HTTPServer) Serve() (err error) {
+func (h *HTTPServer) Serve(startC chan struct{}) (err error) {
+	close(startC)
 	defer func() {
 		if err := recover(); err != nil {
 			if err == http.ErrServerClosed {

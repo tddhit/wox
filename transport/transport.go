@@ -1,6 +1,6 @@
 package transport
 
 type Server interface {
-	Serve() error
+	Serve(chan struct{}) error
 	Close()
 }

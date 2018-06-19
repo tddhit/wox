@@ -62,13 +62,16 @@ func (w *worker) run() {
 	go w.watchMaster()
 	go w.watchSignal()
 	go w.listenAndServe()
-	go w.readMsg()
 
+	startC := make(chan struct{})
 	w.wg.Add(1)
 	go func() {
-		w.server.Serve()
+		w.server.Serve(startC)
 		w.wg.Done()
 	}()
+	<-startC
+	time.Sleep(100 * time.Millisecond)
+	go w.readMsg()
 
 	reason := os.Getenv("REASON")
 	if reason == reasonReload {
@@ -142,7 +145,21 @@ func (w *worker) notifyMaster(msg *message) (err error) {
 func (w *worker) listenAndServe() {
 	http.HandleFunc("/stats", w.doStats)
 	http.HandleFunc("/stats.html", w.doStatsHTML)
-	if err := http.ListenAndServe(w.addr, nil); err != nil {
+	tcpAddr, err := net.ResolveTCPAddr("tcp", w.addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fd, err := Listen(tcpAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	file := os.NewFile(uintptr(fd), "")
+	listener, err := net.FileListener(file)
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.DefaultServeMux}
+	if err := srv.Serve(listener); err != nil {
 		log.Fatal(err)
 	}
 }
