@@ -94,6 +94,7 @@ func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxSe
 	} else {
 		s.workerAddr = getDefaultAddr(s.transportAddr, 2)
 	}
+	log.Info(s.masterAddr, s.workerAddr, s.transportAddr)
 	return s
 }
 
@@ -118,7 +119,7 @@ func (s *WoxServer) TransportAddr() string {
 
 func (s *WoxServer) Go() {
 	if os.Getenv(FORK) == "1" {
-		newWorker(s.workerAddr, s.registry, s.httpServer).run()
+		newWorker(s.workerAddr, s.transportAddr, s.registry, s.httpServer).run()
 	} else {
 		newMaster(s.masterAddr, s.targets, s.pidPath).run()
 	}

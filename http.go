@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"net/http/pprof"
 	"net/url"
 	"os"
 	"sync"
@@ -58,11 +57,6 @@ func NewHTTPServer(opt *option.Server) *HTTPServer {
 		return &HTTPServer{opt: opt}
 	}
 	mux := httprouter.New()
-	mux.HandlerFunc("GET", "/debug/pprof/", pprof.Index)
-	mux.HandlerFunc("GET", "/debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandlerFunc("GET", "/debug/pprof/profile", pprof.Profile)
-	mux.HandlerFunc("GET", "/debug/pprof/symbol", pprof.Symbol)
-	mux.HandlerFunc("GET", "/debug/pprof/trace", pprof.Trace)
 	writeTimeout := 5 * time.Second
 	if opt.WriteTimeout > 0 {
 		writeTimeout = time.Duration(opt.WriteTimeout)

@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -18,24 +19,28 @@ import (
 )
 
 type worker struct {
-	addr     string
-	registry string
-	pid      int
-	ppid     int
-	uc       *net.UnixConn
-	exitCh   chan struct{}
-	wg       sync.WaitGroup
-	r        *naming.Registry
-	server   transport.Server
+	addr          string
+	transportAddr string
+	registry      string
+	pid           int
+	ppid          int
+	uc            *net.UnixConn
+	exitCh        chan struct{}
+	wg            sync.WaitGroup
+	r             *naming.Registry
+	server        transport.Server
 }
 
-func newWorker(addr, registry string, server transport.Server) *worker {
+func newWorker(addr, transportAddr, registry string,
+	server transport.Server) *worker {
+
 	w := &worker{
-		addr:     addr,
-		registry: registry,
-		pid:      os.Getpid(),
-		exitCh:   make(chan struct{}),
-		server:   server,
+		addr:          addr,
+		transportAddr: transportAddr,
+		registry:      registry,
+		pid:           os.Getpid(),
+		exitCh:        make(chan struct{}),
+		server:        server,
 	}
 	file := os.NewFile(3, "")
 	if conn, err := net.FileConn(file); err != nil {
@@ -56,12 +61,8 @@ func (w *worker) run() {
 	w.register()
 	go w.watchMaster()
 	go w.watchSignal()
-
-	w.wg.Add(1)
-	go func() {
-		w.readMsg()
-		w.wg.Done()
-	}()
+	go w.listenAndServe()
+	go w.readMsg()
 
 	w.wg.Add(1)
 	go func() {
@@ -89,7 +90,7 @@ func (w *worker) register() {
 		Timeout:    2 * time.Second,
 		TTL:        3,
 		Target:     w.registry,
-		ListenAddr: w.addr,
+		ListenAddr: w.transportAddr,
 	}
 	w.r.Register()
 }
@@ -138,6 +139,14 @@ func (w *worker) notifyMaster(msg *message) (err error) {
 	return
 }
 
+func (w *worker) listenAndServe() {
+	http.HandleFunc("/stats", w.doStats)
+	http.HandleFunc("/stats.html", w.doStatsHTML)
+	if err := http.ListenAndServe(w.addr, nil); err != nil {
+		log.Fatal(err)
+	}
+}
+
 func (w *worker) doStats(rsp http.ResponseWriter, req *http.Request) {
 	rsp.Header().Set("Content-Type", "application/json; charset=utf-8")
 	rsp.Header().Set("Access-Control-Allow-Origin", "*")
@@ -163,6 +172,7 @@ func (w *worker) doStatsHTML(rsp http.ResponseWriter, req *http.Request) {
 
 func (w *worker) close() {
 	w.r.Unregister()
+	log.Info(time.Duration(w.r.TTL+1) * time.Second)
 	time.AfterFunc(time.Duration(w.r.TTL+1)*time.Second, func() {
 		w.uc.Close()
 		close(w.exitCh)
