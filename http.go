@@ -15,8 +15,6 @@ import (
 	"github.com/julienschmidt/httprouter"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/http2"
 	"golang.org/x/time/rate"
 
@@ -25,21 +23,6 @@ import (
 	"github.com/tddhit/wox/option"
 	"github.com/tddhit/wox/tracing"
 )
-
-var (
-	httpQPS *prometheus.GaugeVec
-)
-
-func init() {
-	httpQPS = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "http_qps",
-			Help: "http qps",
-		},
-		[]string{"endpoint"},
-	)
-	prometheus.MustRegister(httpQPS)
-}
 
 type HTTPServer struct {
 	opt           *option.Server
@@ -104,7 +87,6 @@ func NewHTTPServer(opt *option.Server) *HTTPServer {
 			rsp.Write([]byte(`{"code":200}`))
 			return
 		})
-	s.mux.Handler("GET", "/metrics", promhttp.Handler())
 
 	tracer, closer, err := tracing.Init(opt.Registry, opt.TracingAgentAddr)
 	if err != nil {

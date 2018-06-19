@@ -134,6 +134,6 @@ func withParse(
 
 		elapsed := float64(time.Since(start) / time.Millisecond)
 		httpResponseTime.WithLabelValues(pattern).Observe(elapsed)
-		log.Infof("type=http\treq=%s\trsp=%s\telapsed=%f\n", input, output, elapsed/1000000)
+		log.Infof("type=http\treq=%s\trsp=%s\telapsed=%f\n", input, output, elapsed)
 	}
 }

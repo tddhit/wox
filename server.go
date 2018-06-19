@@ -94,7 +94,6 @@ func NewServer(etcdAddrs, confKey, confPath string, conf confcenter.Conf) *WoxSe
 	} else {
 		s.workerAddr = getDefaultAddr(s.transportAddr, 2)
 	}
-	log.Info(s.masterAddr, s.workerAddr, s.transportAddr)
 	return s
 }
 

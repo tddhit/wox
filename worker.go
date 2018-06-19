@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tddhit/tools/log"
 	"github.com/tddhit/wox/naming"
 	"github.com/tddhit/wox/transport"
@@ -145,6 +146,7 @@ func (w *worker) notifyMaster(msg *message) (err error) {
 func (w *worker) listenAndServe() {
 	http.HandleFunc("/stats", w.doStats)
 	http.HandleFunc("/stats.html", w.doStatsHTML)
+	http.Handle("/metrics", promhttp.Handler())
 	tcpAddr, err := net.ResolveTCPAddr("tcp", w.addr)
 	if err != nil {
 		log.Fatal(err)

@@ -1,10 +1,5 @@
 var first = true;
-var charts = new Array();
-var options = new Array();
-for (var i = 0; i < 3; i++) {
-    var chart = echarts.init(document.getElementById('chart-' + i));
-    charts.push(chart);
-}
+var chart = echarts.init(document.getElementById('chart-0'));
 var Option = function() {
     return {
         title: {
@@ -43,6 +38,7 @@ var Option = function() {
         series: []
     }
 }
+var option = new Option();
 var SeriesItem = function() {
     return {
         name: '',
@@ -82,113 +78,67 @@ var MethodStats = function() {
     }
 }
 function Convert(data) {
-    var processes = new Array();
     var process = new ProcessStats();
-    process.id = data.master.id;
+    process.id = data.id;
     var method = new MethodStats();
     method.name = 'Total';
-    method.qps = data.master.qps;
+    method.qps = data.qps;
     process.methods.push(method);
-    for (var name in data.master.method) {
+    for (var name in data.method) {
         var method = new MethodStats();
         method.name = name;
-        method.qps = data.master.method[name];
+        method.qps = data.method[name];
         process.methods.push(method);
     }
-    processes.push(process);
-    for (var pid in data.worker) {
-        var worker = data.worker[pid];
-        var process = new ProcessStats();
-        process.id = pid;
-        var method = new MethodStats();
-        method.name = 'Total';
-        method.qps = worker.qps;
-        process.methods.push(method);
-        for (var name in worker.method) {
-            var method = new MethodStats();
-            method.name = name;
-            method.qps = worker.method[name];
-            process.methods.push(method);
-        }
-        processes.push(process);
-    }
-    return processes
+    return process
 }
 function GetStats() {
     jQuery.ajax({
-        url: "http://172.17.202.212:18861/stats",
+        url: "http://##ListenAddr##/stats",
         type: 'get',
         async: 'true',
         dataType: 'json',
         success: function(data) {
-            var newData = Convert(data);
+            var process = Convert(data);
             if (!first) {
-                if (newData[0].methods.length != options[0].series.length) {
+                if (process.methods.length != option.series.length) {
                     first = true
-                } else if (newData[1].methods.length != options[1].series.length) {
-                    first = true
-                } else if (newData[2].methods.length != options[2].series.length) {
-                    first = true
-                } else if (('Master-'+newData[0].id) != options[0].title.text) {
-                    first = true
-                } else if (('Worker-'+newData[1].id) != options[1].title.text) {
-                    first = true
-                } else if (('Worker-'+newData[2].id) != options[2].title.text) {
+                } else if (('PID-'+process.id) != option.title.text) {
                     first = true
                 }
             }
             if (first) {
                 first = false;
-                options.splice(0, options.length);
-                for (var i in newData) {
-                    if (i > 3) {
-                        continue
+                option = new Option();
+                option.title.text = 'PID-' + process.id;
+                for (var j in process.methods) {
+                    var method = process.methods[j];
+                    option.legend.data.push(method.name);
+                    var seriesItem = new SeriesItem();
+                    seriesItem.name = method.name;
+                    var now = new Date() 
+                    value = {
+                        name: now.toString(),
+                        value: [now, method.qps]
                     }
-                    var option = new Option();
-                    var process = newData[i];
-                    if (i == 0) {
-                        title = 'Master-' + process.id;
-                    } else {
-                        title = 'Worker-' + process.id;
-                    }
-                    option.title.text = title;
-                    for (var j in process.methods) {
-                        var method = process.methods[j];
-                        option.legend.data.push(method.name);
-                        var seriesItem = new SeriesItem();
-                        seriesItem.name = method.name;
-                        var now = new Date() 
-                        value = {
-                            name: now.toString(),
-                            value: [now, method.qps]
-                        }
-                        seriesItem.data.push(value);
-                        option.series.push(seriesItem);
-                    }
-                    options.push(option);
-                    charts[i].setOption(option, true);
+                    seriesItem.data.push(value);
+                    option.series.push(seriesItem);
                 }
+                chart.setOption(option, true);
             } else {
-                for (var i in newData) {
-                    if (i > 3) {
-                        continue
+                for (var j in process.methods) {
+                    var method = process.methods[j];
+                    var now = new Date();
+                    value = {
+                        name: now.toString(),
+                        value: [now, method.qps]
                     }
-                    var option = options[i];
-                    var process = newData[i];
-                    for (var j in process.methods) {
-                        var method = process.methods[j];
-                        var now = new Date();
-                        value = {
-                            name: now.toString(),
-                            value: [now, method.qps]
-                        }
-                        option.series[j].data.push(value);
-                    }
-                    charts[i].setOption(option, true);
-                    for (var j in process.methods) {
-                        if (option.series[j].data.length == 20) {
-                            option.series[j].data.shift()
-                        }
+                    option.series[j].data.push(value);
+                }
+                chart.setOption(option, true);
+                for (var j in process.methods) {
+                    if (option.series[j].data.length == 20) {
+                        option.series[j].data.shift()
                     }
                 }
             }
